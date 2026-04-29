@@ -1,6 +1,15 @@
-# Project Aegis-Shadow
+<div align="center">
 
-> **Dual-Path eBPF Research: Programmable Rootkits vs. Runtime Observability Shields**
+![Aegis-Shadow Logo](assets/logo.svg)
+
+[![License](https://img.shields.io/badge/license-Educational-red.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](https://www.rust-lang.org/)
+[![eBPF](https://img.shields.io/badge/eBPF-CO--RE-blue.svg)](https://ebpf.io/)
+[![Kernel](https://img.shields.io/badge/kernel-5.10+-green.svg)](https://www.kernel.org/)
+
+</div>
+
+---
 
 ## Overview
 
@@ -38,15 +47,16 @@ bash verify-env.sh
 # 2. Build everything
 make build
 
-# 3. Test process hiding (in VM, as root)
-sleep 99999 &
-sudo ./target/release/offense hide-pid --pid $!
+# 3. Start offensive rootkit (loads all 13 features)
+sudo ./target/release/offense --iface eth0 --hide-pid 1234
 
-# 4. Run defense audit (in another terminal)
-sudo ./target/release/defense audit
+# 4. Run defense detection (in another terminal)
+sudo ./target/release/defense --all-modules --verbose
 
-# 5. Emergency teardown
-sudo ./target/release/offense kill-switch
+# 5. Stop programs
+# Press Ctrl+C in each terminal, or:
+sudo pkill offense
+sudo pkill defense
 ```
 
 ## Project Structure
@@ -60,49 +70,59 @@ sudo ./target/release/offense kill-switch
 | `defense/` | User-space detection engine and CLI |
 | `xtask/` | Build automation |
 
-## Offense CLI
+## Usage
 
+### Offense (Rootkit)
+
+The offense module loads **all 13 rootkit features automatically** on startup. Configure via optional flags:
+
+```bash
+# Basic usage - loads all features
+sudo ./target/release/offense --iface eth0
+
+# With optional configurations
+sudo ./target/release/offense \
+    --iface eth0 \
+    --hide-pid 1234 \
+    --obfuscate-inode 98765 \
+    --monitor-tty 136:0 \
+    --pin-maps
 ```
-sudo ./target/release/offense [--dry-run] <COMMAND>
 
-Commands:
-  hide-pid       Hide a process by PID
-  net-stealth    Enable network stealth (XDP)
-  full           Run all features
-  cleanup        Remove pinned BPF programs
-  kill-switch    Emergency: detach ALL programs
+**Available flags:** `--iface`, `--verbose`, `--hide-pid`, `--obfuscate-inode`, `--monitor-tty`, `--spoof-ppid`, `--timestomp`, `--pin-maps`
+
+### Defense (Detection Engine)
+
+The defense module enables detection modules via flags:
+
+```bash
+# Enable all detection modules
+sudo ./target/release/defense --all-modules
+
+# Enable specific modules
+sudo ./target/release/defense \
+    --ghost-maps \
+    --syscall-latency \
+    --bytecode-check \
+    --output /tmp/alerts.json
 ```
 
-## Defense CLI
+**Available flags:** `--verbose`, `--output`, `--threshold`, `--all-modules`, `--ghost-maps`, `--syscall-latency`, `--bytecode-check`, `--hidden-process`, `--suspicious-hooks`, `--calibration-period`
 
-```
-sudo ./target/release/defense [OPTIONS] <COMMAND>
-
-Options:
-  --json              Output as JSON lines (SIEM/CI integration)
-  --threshold <FLOAT> Latency threshold multiplier (default: 1.3)
-
-Commands:
-  audit            Full audit (ghost maps + integrity + hooks + hidden procs + net)
-  baseline         Calibrate multi-syscall latency baseline
-  monitor          Real-time multi-syscall latency monitoring
-  ghost-maps       Scan for orphaned BPF maps + metadata heuristics
-  integrity-check  Audit BPF program bytecode for dangerous helpers
-  hook-audit       Audit BPF programs on sensitive kernel hooks
-  hidden-procs     Detect processes hidden from /proc enumeration
-  net-audit        Scan for rogue XDP/TC network attachments
-  quarantine <IDs> Detach and unpin suspicious BPF programs
-```
+📖 **For detailed usage examples, see [USAGE.md](USAGE.md)**
 
 ## Running Tests
 
 ```bash
-# Unit tests (no root required)
-cargo test --package offense --package defense
+# Run automated test scripts (requires root, in VM)
+sudo ./tests/test_offense.sh
+sudo ./tests/test_defense.sh
 
-# Integration tests (root required, in VM)
-sudo cargo test --package offense --package defense -- --test-threads=1
+# Or use Makefile
+make test
 ```
+
+📖 **For manual testing procedures, see [USAGE.md](USAGE.md#testing)**
 
 ## License
 

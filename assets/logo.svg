@@ -1,0 +1,86 @@
+<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="offenseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff4444;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ff8800;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="defenseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4444ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00ddff;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="titleGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff4444;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#8844ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4444ff;stop-opacity:1" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="200" fill="#0a0a0a" rx="10"/>
+  
+  <!-- Shield Icon (Defense) - Left -->
+  <g transform="translate(50, 60)">
+    <path d="M 40 0 L 0 15 L 0 50 C 0 70 20 85 40 90 C 60 85 80 70 80 50 L 80 15 Z" 
+          fill="url(#defenseGradient)" filter="url(#glow)" opacity="0.8"/>
+    <path d="M 40 20 L 25 35 L 32 42 L 40 34 L 55 49 L 62 42 Z" 
+          fill="#ffffff" opacity="0.9"/>
+  </g>
+  
+  <!-- Fire Icon (Offense) - Right -->
+  <g transform="translate(670, 60)">
+    <path d="M 40 10 C 35 25 30 35 30 50 C 30 65 35 75 40 80 C 45 75 50 65 50 50 C 50 35 45 25 40 10 Z" 
+          fill="url(#offenseGradient)" filter="url(#glow)" opacity="0.8"/>
+    <path d="M 40 30 C 37 38 35 43 35 50 C 35 57 37 62 40 65 C 43 62 45 57 45 50 C 45 43 43 38 40 30 Z" 
+          fill="#ffdd44" opacity="0.9"/>
+  </g>
+  
+  <!-- Main Title -->
+  <text x="400" y="80" font-family="'Courier New', monospace" font-size="48" font-weight="bold" 
+        text-anchor="middle" fill="url(#titleGradient)" filter="url(#glow)">
+    AEGIS-SHADOW
+  </text>
+  
+  <!-- Subtitle -->
+  <text x="400" y="110" font-family="'Courier New', monospace" font-size="14" 
+        text-anchor="middle" fill="#888888">
+    Dual-Path eBPF Security Research Platform
+  </text>
+  
+  <!-- Feature Tags -->
+  <g transform="translate(200, 130)">
+    <!-- Offense Tag -->
+    <rect x="0" y="0" width="120" height="30" rx="15" fill="#ff4444" opacity="0.2"/>
+    <rect x="0" y="0" width="120" height="30" rx="15" fill="none" stroke="#ff4444" stroke-width="2"/>
+    <text x="60" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
+          text-anchor="middle" fill="#ff6666">🔥 OFFENSE</text>
+    
+    <!-- Defense Tag -->
+    <rect x="140" y="0" width="120" height="30" rx="15" fill="#4444ff" opacity="0.2"/>
+    <rect x="140" y="0" width="120" height="30" rx="15" fill="none" stroke="#4444ff" stroke-width="2"/>
+    <text x="200" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
+          text-anchor="middle" fill="#6666ff">🛡️ DEFENSE</text>
+    
+    <!-- Research Tag -->
+    <rect x="280" y="0" width="120" height="30" rx="15" fill="#8844ff" opacity="0.2"/>
+    <rect x="280" y="0" width="120" height="30" rx="15" fill="none" stroke="#8844ff" stroke-width="2"/>
+    <text x="340" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
+          text-anchor="middle" fill="#aa66ff">🔬 RESEARCH</text>
+  </g>
+  
+  <!-- eBPF Badge -->
+  <g transform="translate(350, 170)">
+    <rect x="0" y="0" width="100" height="20" rx="10" fill="#00aa00" opacity="0.3"/>
+    <rect x="0" y="0" width="100" height="20" rx="10" fill="none" stroke="#00ff00" stroke-width="1"/>
+    <text x="50" y="14" font-family="Arial, sans-serif" font-size="10" font-weight="bold" 
+          text-anchor="middle" fill="#00ff00">eBPF • CO-RE</text>
+  </g>
+</svg>
+
+<!-- Made with Bob -->
