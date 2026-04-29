@@ -1,0 +1,9 @@
+[alias]
+xtask = "run --package xtask --"
+
+[build]
+target-dir = "target"
+
+# Unstable features needed for eBPF builds
+[unstable]
+build-std = ["core"]

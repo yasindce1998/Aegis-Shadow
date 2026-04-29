@@ -1,0 +1,20 @@
+[package]
+name = "offense-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf = "~0.1"
+aya-log-ebpf = "~0.1"
+common = { path = "../common", default-features = false, features = ["kernel"] }
+
+[[bin]]
+name = "offense"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+panic = "abort"
+opt-level = 2      # Required: eBPF verifier rejects unoptimized code
+debug = false
+strip = "none"      # BPF needs symbols

