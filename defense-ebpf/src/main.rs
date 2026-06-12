@@ -2,18 +2,16 @@
 #![no_main]
 
 use aya_ebpf::{
-    macros::{kprobe, kretprobe, map, tracepoint},
+    macros::{kprobe, map, tracepoint},
     maps::{HashMap, PerfEventArray},
     programs::{ProbeContext, TracePointContext},
-    helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel},
+    helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns},
 };
-use aya_log_ebpf::info;
 use common::{
-    DefenseAlert, LatencyEntry,
+    DefenseAlert, LatencyBaseline,
     ALERT_GHOST_MAP, ALERT_SYSCALL_LATENCY, ALERT_BYTECODE_TAMPER,
     ALERT_HIDDEN_PROCESS, ALERT_SUSPICIOUS_HOOK,
 };
-use core::mem;
 
 // ──────────────────────────────────────────────
 // BPF Maps
@@ -29,9 +27,9 @@ static DEFENSE_ALERTS: PerfEventArray<DefenseAlert> = PerfEventArray::new(0);
 static SYSCALL_ENTRY_TS: HashMap<u64, u64> = HashMap::with_max_entries(4096, 0);
 
 /// Stores baseline latency measurements for syscalls.
-/// Key: syscall_nr (u32). Value: LatencyEntry.
+/// Key: syscall_nr (u32). Value: LatencyBaseline.
 #[map]
-static LATENCY_BASELINE: HashMap<u32, LatencyEntry> = HashMap::with_max_entries(512, 0);
+static LATENCY_BASELINE: HashMap<u32, LatencyBaseline> = HashMap::with_max_entries(512, 0);
 
 /// Tracks known BPF map IDs to detect ghost maps.
 /// Key: map_id (u32). Value: 1 (marker).
@@ -86,16 +84,14 @@ fn try_detect_ghost_map(ctx: &TracePointContext) -> Result<u32, i64> {
     let pid = (pid_tgid >> 32) as u32;
 
     if cmd == BPF_MAP_CREATE {
-        // Track new map creation
-        // In real implementation, we'd extract map_id from return value
-        // For now, we'll detect ghost maps by scanning /proc/self/fdinfo
         let alert = DefenseAlert {
             alert_type: ALERT_GHOST_MAP,
-            severity: 2, // Medium
+            severity: 2,
             pid,
+            _pad: 0,
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: cmd as u64,
-            details: [0u8; 64],
+            details: [0u8; 16],
         };
         DEFENSE_ALERTS.output(ctx, &alert, 0);
     }
@@ -153,33 +149,27 @@ fn try_monitor_syscall_exit(ctx: &TracePointContext) -> Result<u32, i64> {
     if let Some(baseline) = unsafe { LATENCY_BASELINE.get(&syscall_nr) } {
         let baseline_avg = baseline.avg_latency_ns;
         let threshold = baseline_avg + (baseline_avg / 2); // 50% over baseline
-        
+
         if latency_ns > threshold {
             let pid = (pid_tgid >> 32) as u32;
+            let mut details = [0u8; 16];
+            let latency_bytes = latency_ns.to_le_bytes();
+            details[0..8].copy_from_slice(&latency_bytes);
+
             let alert = DefenseAlert {
                 alert_type: ALERT_SYSCALL_LATENCY,
-                severity: 2, // Medium
+                severity: 2,
                 pid,
+                _pad: 0,
                 timestamp_ns: exit_ts,
                 context: syscall_nr as u64,
-                details: [0u8; 64],
-            };
-            
-            // Store latency in details
-            let latency_bytes = latency_ns.to_le_bytes();
-            let mut details = [0u8; 64];
-            details[0..8].copy_from_slice(&latency_bytes);
-            
-            let alert_with_details = DefenseAlert {
                 details,
-                ..alert
             };
-            
-            DEFENSE_ALERTS.output(ctx, &alert_with_details, 0);
+
+            DEFENSE_ALERTS.output(ctx, &alert, 0);
         }
     } else {
-        // Initialize baseline
-        let entry = LatencyEntry {
+        let entry = LatencyBaseline {
             avg_latency_ns: latency_ns,
             sample_count: 1,
             _pad: 0,
@@ -216,22 +206,16 @@ fn try_check_bytecode_integrity(ctx: &TracePointContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
     let pid = (pid_tgid >> 32) as u32;
     
-    // In a real implementation, we would:
-    // 1. Extract prog_id from the return value
-    // 2. Read the bytecode from the program
-    // 3. Compute a hash (e.g., FNV-1a)
-    // 4. Compare against stored hash
-    
-    // For now, we'll just alert on new program loads
     let alert = DefenseAlert {
         alert_type: ALERT_BYTECODE_TAMPER,
-        severity: 3, // High
+        severity: 3,
         pid,
+        _pad: 0,
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: cmd as u64,
-        details: [0u8; 64],
+        details: [0u8; 16],
     };
-    
+
     DEFENSE_ALERTS.output(ctx, &alert, 0);
     
     Ok(0)
@@ -271,13 +255,14 @@ fn try_detect_hidden_process(ctx: &ProbeContext) -> Result<u32, i64> {
     if count < 1024 {
         let alert = DefenseAlert {
             alert_type: ALERT_HIDDEN_PROCESS,
-            severity: 3, // High
+            severity: 3,
             pid,
+            _pad: 0,
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: count,
-            details: [0u8; 64],
+            details: [0u8; 16],
         };
-        
+
         DEFENSE_ALERTS.output(ctx, &alert, 0);
     }
     
@@ -319,13 +304,14 @@ fn try_detect_suspicious_hook(ctx: &TracePointContext) -> Result<u32, i64> {
     
     let alert = DefenseAlert {
         alert_type: ALERT_SUSPICIOUS_HOOK,
-        severity: 3, // High
+        severity: 3,
         pid,
+        _pad: 0,
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: cmd as u64,
-        details: [0u8; 64],
+        details: [0u8; 16],
     };
-    
+
     DEFENSE_ALERTS.output(ctx, &alert, 0);
     
     Ok(0)

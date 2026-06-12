@@ -148,26 +148,20 @@ pub const SYSCALL_SYSLOG: u32 = 4;
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct DefenseAlert {
-    /// Alert type from EVENT_* constants (100+).
+    /// Alert type (ALERT_* constants).
     pub alert_type: u32,
-    /// Severity: 1=info, 2=warning, 3=critical.
+    /// Severity: 1=Low, 2=Medium, 3=High, 4=Critical.
     pub severity: u32,
-    /// Related BPF program ID (if applicable).
-    pub prog_id: u32,
-    /// Related BPF map ID (if applicable).
-    pub map_id: u32,
-    /// Syscall that triggered the alert (SYSCALL_* constants), or 0.
-    pub syscall_id: u32,
-    /// BPF helper ID that was flagged (for integrity alerts), or 0.
-    pub helper_id: u32,
-    /// Measured latency in nanoseconds (for latency alerts).
-    pub latency_ns: u64,
-    /// Baseline latency in nanoseconds (for comparison).
-    pub baseline_ns: u64,
-    /// Related PID (for hidden-process alerts), or 0.
-    pub related_pid: u32,
+    /// PID that triggered the alert.
+    pub pid: u32,
     /// Padding for 8-byte alignment.
     pub _pad: u32,
+    /// Timestamp in nanoseconds (from bpf_ktime_get_ns).
+    pub timestamp_ns: u64,
+    /// Additional context (meaning depends on alert_type).
+    pub context: u64,
+    /// Extra details (e.g., latency bytes for ALERT_SYSCALL_LATENCY).
+    pub details: [u8; 16],
 }
 
 /// Latency measurement stored in PerCpuHashMap.
@@ -179,6 +173,19 @@ pub struct LatencyEntry {
     pub entry_ns: u64,
     /// Which syscall this entry tracks (SYSCALL_* constant).
     pub syscall_id: u32,
+    /// Padding.
+    pub _pad: u32,
+}
+
+/// Baseline latency measurement for defense syscall monitoring.
+/// Key: syscall_nr (u32). Value: this struct.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct LatencyBaseline {
+    /// Running average latency in nanoseconds.
+    pub avg_latency_ns: u64,
+    /// Number of samples used to compute the average.
+    pub sample_count: u32,
     /// Padding.
     pub _pad: u32,
 }
@@ -201,6 +208,13 @@ pub struct ThresholdConfig {
     /// Threshold denominator (default 10).
     pub denominator: u32,
 }
+
+// Defense alert type constants (used by defense-ebpf and defense user-space)
+pub const ALERT_GHOST_MAP: u32 = 1;
+pub const ALERT_SYSCALL_LATENCY: u32 = 2;
+pub const ALERT_BYTECODE_TAMPER: u32 = 3;
+pub const ALERT_HIDDEN_PROCESS: u32 = 4;
+pub const ALERT_SUSPICIOUS_HOOK: u32 = 5;
 
 /// Minimum interval between alerts per-CPU in nanoseconds.
 /// Default: 100ms = 100_000_000ns.
@@ -269,6 +283,9 @@ unsafe impl aya::Pod for DefenseAlert {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for LatencyEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for LatencyBaseline {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for RateLimitEntry {}

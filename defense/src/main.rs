@@ -1,23 +1,22 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{HashMap, PerfEventArray},
+    maps::PerfEventArray,
     programs::{KProbe, TracePoint},
     Bpf, Btf,
 };
 use aya_log::BpfLogger;
 use clap::Parser;
 use common::{
-    DefenseAlert, LatencyEntry,
+    DefenseAlert,
     ALERT_GHOST_MAP, ALERT_SYSCALL_LATENCY, ALERT_BYTECODE_TAMPER,
     ALERT_HIDDEN_PROCESS, ALERT_SUSPICIOUS_HOOK,
 };
-use log::{info, warn, error, debug};
+use log::{info, warn, error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap as StdHashMap;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
-use std::path::Path;
 use tokio::signal;
 use tokio::time::{sleep, Duration};
 
@@ -77,7 +76,7 @@ struct AlertRecord {
 }
 
 struct DefenseEngine {
-    alert_count: StdHashMap<u8, u64>,
+    alert_count: StdHashMap<u32, u64>,
     output_file: Option<File>,
     threshold: u8,
     calibrating: bool,
@@ -100,7 +99,7 @@ impl DefenseEngine {
     }
 
     fn process_alert(&mut self, alert: &DefenseAlert) {
-        if alert.severity < self.threshold {
+        if alert.severity < self.threshold as u32 {
             return;
         }
 
@@ -208,7 +207,7 @@ async fn main() -> Result<()> {
     ))?;
 
     // Load BTF if available
-    if let Ok(btf) = Btf::from_sys_fs() {
+    if let Ok(_btf) = Btf::from_sys_fs() {
         info!("✓ BTF loaded from /sys/kernel/btf/vmlinux");
     } else {
         warn!("⚠ BTF not available - CO-RE features may not work");
