@@ -271,7 +271,7 @@ fn parse_pid_from_name(name: &[u8; 16]) -> u32 {
         if c == 0 {
             break;
         }
-        if !(b'0'..=b'9').contains(&c) {
+        if !c.is_ascii_digit() {
             return 0;
         }
         pid = pid * 10 + (c - b'0') as u32;
