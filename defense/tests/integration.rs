@@ -256,3 +256,177 @@ fn test_process_many_alerts() {
     assert_eq!(engine.alerts_by_type(ALERT_HIDDEN_PROCESS), 200);
     assert_eq!(engine.alerts_by_type(ALERT_SUSPICIOUS_HOOK), 200);
 }
+
+// ─── Sliding Window Eviction ─────────────────────────────────────
+
+#[test]
+fn test_sliding_window_eviction() {
+    let window_ns = 10_000_000_000; // 10 seconds
+    let mut engine = DefenseEngine::new(None, 1).unwrap().with_window(window_ns);
+
+    let pid = 42u32;
+
+    // Insert alerts at t=1s, t=2s, t=3s
+    for i in 1..=3 {
+        let alert = make_defense_alert(ALERT_GHOST_MAP, 2, pid, i * 1_000_000_000, 0);
+        engine.process_alert(&alert);
+    }
+    assert!(engine.pid_rate(pid) > 0.0);
+
+    // Insert alert at t=20s — should evict all previous (beyond 10s window)
+    let alert = make_defense_alert(ALERT_GHOST_MAP, 2, pid, 20_000_000_000, 0);
+    engine.process_alert(&alert);
+
+    // Only 1 alert should remain in the window (t=20s, window covers 10s-20s)
+    let rate = engine.pid_rate(pid);
+    let expected = 1.0 / (window_ns as f64 / 1_000_000_000.0);
+    assert!((rate - expected).abs() < 0.001);
+}
+
+// ─── Anomaly Scoring ─────────────────────────────────────────────
+
+#[test]
+fn test_anomaly_score_during_calibration() {
+    let mut engine = DefenseEngine::new(None, 1).unwrap();
+
+    let alert = make_defense_alert(ALERT_GHOST_MAP, 3, 100, 1_000_000_000, 0);
+    let record = engine.process_alert(&alert).unwrap();
+
+    // During calibration, anomaly score should be 0
+    assert_eq!(record.anomaly_score, 0.0);
+}
+
+#[test]
+fn test_anomaly_score_after_calibration() {
+    let window_ns = 10_000_000_000; // 10 seconds
+    let mut engine = DefenseEngine::new(None, 1).unwrap().with_window(window_ns);
+
+    // Calibration: 2 alerts over 10 seconds = 0.2 alerts/sec baseline
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 2, 200, 1_000_000_000, 0));
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 2, 200, 5_000_000_000, 0));
+    engine.finish_calibration_at(10_000_000_000);
+
+    // Post-calibration: burst of 10 alerts in 1 second from same type
+    // Use a different PID to get a clean window
+    let mut last_record = None;
+    for i in 0..10 {
+        let alert = make_defense_alert(
+            ALERT_GHOST_MAP,
+            2,
+            300,
+            11_000_000_000 + i * 100_000_000,
+            0,
+        );
+        last_record = engine.process_alert(&alert);
+    }
+
+    let record = last_record.unwrap();
+    // Rate is ~10 alerts in 10s window = 1.0/sec, baseline is 0.2/sec → score ~5.0
+    assert!(record.anomaly_score > 1.0);
+}
+
+// ─── Attack Chain Detection ──────────────────────────────────────
+
+#[test]
+fn test_attack_chain_detection() {
+    let mut engine = DefenseEngine::new(None, 1).unwrap();
+    let pid = 666u32;
+    let base_ts = 1_000_000_000u64;
+
+    // 3 distinct alert types from same PID → attack chain
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, pid, base_ts, 0));
+    engine.process_alert(&make_defense_alert(ALERT_BYTECODE_TAMPER, 3, pid, base_ts + 1000, 0));
+    let record =
+        engine.process_alert(&make_defense_alert(ALERT_SUSPICIOUS_HOOK, 3, pid, base_ts + 2000, 0));
+
+    let record = record.unwrap();
+    assert!(record.is_attack_chain);
+    assert_eq!(record.correlated_types.len(), 3);
+    assert!(record.correlated_types.contains(&"Ghost Map Detected".to_string()));
+    assert!(record.correlated_types.contains(&"Bytecode Tampering".to_string()));
+    assert!(record.correlated_types.contains(&"Suspicious Hook Detected".to_string()));
+}
+
+#[test]
+fn test_attack_chain_below_threshold() {
+    let mut engine = DefenseEngine::new(None, 1).unwrap();
+    let pid = 777u32;
+    let base_ts = 1_000_000_000u64;
+
+    // Only 2 distinct types — not an attack chain
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, pid, base_ts, 0));
+    let record =
+        engine.process_alert(&make_defense_alert(ALERT_BYTECODE_TAMPER, 3, pid, base_ts + 1000, 0));
+
+    let record = record.unwrap();
+    assert!(!record.is_attack_chain);
+    assert_eq!(engine.pid_distinct_types(pid), 2);
+}
+
+// ─── Per-PID Rate Tracking ───────────────────────────────────────
+
+#[test]
+fn test_per_pid_rate_tracking() {
+    let window_ns = 10_000_000_000; // 10 seconds
+    let mut engine = DefenseEngine::new(None, 1).unwrap().with_window(window_ns);
+
+    let pid = 100u32;
+    let base_ts = 5_000_000_000u64;
+
+    // 5 alerts within the window
+    for i in 0..5 {
+        let alert = make_defense_alert(ALERT_GHOST_MAP, 2, pid, base_ts + i * 1_000_000_000, 0);
+        engine.process_alert(&alert);
+    }
+
+    // Rate should be 5 alerts / 10 seconds = 0.5 alerts/sec
+    let rate = engine.pid_rate(pid);
+    assert!((rate - 0.5).abs() < 0.01);
+}
+
+#[test]
+fn test_mixed_pids_independent() {
+    let mut engine = DefenseEngine::new(None, 1).unwrap();
+
+    let base_ts = 1_000_000_000u64;
+
+    // PID 100: ghost_map + bytecode_tamper (2 types)
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, 100, base_ts, 0));
+    engine.process_alert(&make_defense_alert(ALERT_BYTECODE_TAMPER, 3, 100, base_ts + 1000, 0));
+
+    // PID 200: only ghost_map (1 type)
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, 200, base_ts + 2000, 0));
+
+    assert_eq!(engine.pid_distinct_types(100), 2);
+    assert_eq!(engine.pid_distinct_types(200), 1);
+    assert!(!engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, 200, base_ts + 3000, 0)).unwrap().is_attack_chain);
+}
+
+// ─── Metrics ─────────────────────────────────────────────────────
+
+#[test]
+fn test_metrics_counting() {
+    let mut engine = DefenseEngine::new(None, 3).unwrap();
+
+    // 2 below threshold (suppressed) + 1 above
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 1, 100, 1000, 0));
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 2, 101, 2000, 0));
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, 102, 3000, 0));
+
+    let metrics = engine.metrics();
+    assert_eq!(metrics.alerts_processed, 3);
+    assert_eq!(metrics.alerts_suppressed, 2);
+}
+
+#[test]
+fn test_metrics_attack_chain_count() {
+    let mut engine = DefenseEngine::new(None, 1).unwrap();
+    let pid = 500u32;
+    let base_ts = 1_000_000_000u64;
+
+    engine.process_alert(&make_defense_alert(ALERT_GHOST_MAP, 3, pid, base_ts, 0));
+    engine.process_alert(&make_defense_alert(ALERT_BYTECODE_TAMPER, 3, pid, base_ts + 1000, 0));
+    engine.process_alert(&make_defense_alert(ALERT_SUSPICIOUS_HOOK, 3, pid, base_ts + 2000, 0));
+
+    assert!(engine.metrics().attack_chains_detected > 0);
+}

