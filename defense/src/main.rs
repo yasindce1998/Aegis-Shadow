@@ -256,7 +256,13 @@ async fn main() -> Result<()> {
     }
 
     info!("Shutting down...");
-    info!("Total alerts processed: {}", engine.total_alerts());
+    let m = engine.metrics();
+    info!("=== Defense Engine Metrics ===");
+    info!("  Alerts processed:       {}", m.alerts_processed);
+    info!("  Alerts suppressed:      {}", m.alerts_suppressed);
+    info!("  Attack chains detected: {}", m.attack_chains_detected);
+    info!("  Anomaly escalations:    {}", m.anomaly_escalations);
+    info!("=== Alert Breakdown ===");
     for (alert_type, count) in &engine.alert_count {
         let type_str = defense::classify_alert_type(*alert_type);
         info!("  {} - {} alerts", type_str, count);
