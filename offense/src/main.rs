@@ -417,11 +417,10 @@ async fn process_event_buf(
                 return;
             }
         };
-        for i in 0..events.read {
-            let data = &bufs[i];
-            if data.len() >= std::mem::size_of::<EventHeader>() {
+        for buf in bufs.iter().take(events.read) {
+            if buf.len() >= std::mem::size_of::<EventHeader>() {
                 let event =
-                    unsafe { std::ptr::read_unaligned(data.as_ptr() as *const EventHeader) };
+                    unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EventHeader) };
                 log_event(&event);
             }
         }
@@ -440,11 +439,10 @@ async fn process_cred_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<ay
                 return;
             }
         };
-        for i in 0..events.read {
-            let data = &bufs[i];
-            if data.len() >= std::mem::size_of::<CredentialCapture>() {
+        for buf in bufs.iter().take(events.read) {
+            if buf.len() >= std::mem::size_of::<CredentialCapture>() {
                 let capture =
-                    unsafe { std::ptr::read_unaligned(data.as_ptr() as *const CredentialCapture) };
+                    unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const CredentialCapture) };
                 log_credential_capture(&capture);
             }
         }
