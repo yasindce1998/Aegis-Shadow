@@ -15,5 +15,3 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "
 libc = "0.2"
 nix = { version = "0.27", features = ["process", "signal"] }
 
-[build-dependencies]
-aya-tool = "0.12"

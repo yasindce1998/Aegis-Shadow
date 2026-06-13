@@ -12,9 +12,8 @@ common = { path = "../common", features = ["user"] }
 env_logger = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time", "fs"] }
+bytes = "1"
 libc = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-[build-dependencies]
-aya-tool = "0.12"

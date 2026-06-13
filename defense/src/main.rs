@@ -1,11 +1,12 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::PerfEventArray,
+    maps::AsyncPerfEventArray,
     programs::{KProbe, TracePoint},
     Bpf, Btf,
 };
 use aya_log::BpfLogger;
+use bytes::BytesMut;
 use clap::Parser;
 use common::{
     DefenseAlert,
@@ -18,6 +19,7 @@ use std::collections::HashMap as StdHashMap;
 use std::fs::File;
 use std::io::Write;
 use tokio::signal;
+use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Parser)]
@@ -133,7 +135,7 @@ impl DefenseEngine {
         };
 
         warn!(
-            "🚨 [{}] {} - PID={}, {}",
+            "[{}] {} - PID={}, {}",
             severity_str, alert_type_str, alert.pid, details
         );
 
@@ -154,7 +156,7 @@ impl DefenseEngine {
     }
 
     fn print_summary(&self) {
-        info!("📊 Detection Summary:");
+        info!("Detection Summary:");
         for (alert_type, count) in &self.alert_count {
             let type_str = match *alert_type {
                 ALERT_GHOST_MAP => "Ghost Maps",
@@ -170,7 +172,7 @@ impl DefenseEngine {
 
     fn finish_calibration(&mut self) {
         self.calibrating = false;
-        info!("✓ Calibration complete - active monitoring started");
+        info!("Calibration complete - active monitoring started");
     }
 }
 
@@ -183,7 +185,6 @@ async fn main() -> Result<()> {
     ))
     .init();
 
-    // Bump the memlock rlimit for eBPF
     let rlim = libc::rlimit {
         rlim_cur: libc::RLIM_INFINITY,
         rlim_max: libc::RLIM_INFINITY,
@@ -193,10 +194,8 @@ async fn main() -> Result<()> {
         warn!("Failed to increase RLIMIT_MEMLOCK");
     }
 
-    info!("🛡️  Aegis-Shadow Defense Engine Starting...");
-    info!("🔍 Rootkit Detection & Analysis System");
+    info!("Aegis-Shadow Defense Engine Starting...");
 
-    // Load eBPF bytecode
     #[cfg(debug_assertions)]
     let mut bpf = Bpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/debug/defense"
@@ -206,19 +205,16 @@ async fn main() -> Result<()> {
         "../../target/bpfel-unknown-none/release/defense"
     ))?;
 
-    // Load BTF if available
     if let Ok(_btf) = Btf::from_sys_fs() {
-        info!("✓ BTF loaded from /sys/kernel/btf/vmlinux");
+        info!("BTF loaded from /sys/kernel/btf/vmlinux");
     } else {
-        warn!("⚠ BTF not available - CO-RE features may not work");
+        warn!("BTF not available - CO-RE features may not work");
     }
 
-    // Initialize BPF logger
     if let Err(e) = BpfLogger::init(&mut bpf) {
         warn!("Failed to initialize eBPF logger: {}", e);
     }
 
-    // Determine which modules to enable
     let enable_all = cli.all_modules;
     let enable_ghost = enable_all || cli.ghost_maps;
     let enable_latency = enable_all || cli.syscall_latency;
@@ -227,11 +223,10 @@ async fn main() -> Result<()> {
     let enable_hooks = enable_all || cli.suspicious_hooks;
 
     if !enable_all && !enable_ghost && !enable_latency && !enable_bytecode && !enable_hidden && !enable_hooks {
-        warn!("⚠ No detection modules enabled. Use --all-modules or enable specific modules.");
+        warn!("No detection modules enabled. Use --all-modules or enable specific modules.");
         return Ok(());
     }
 
-    // Module 1: Ghost Map Detection
     if enable_ghost {
         let ghost_map: &mut TracePoint = bpf
             .program_mut("detect_ghost_map")
@@ -239,10 +234,9 @@ async fn main() -> Result<()> {
             .try_into()?;
         ghost_map.load()?;
         ghost_map.attach("syscalls", "sys_enter_bpf")?;
-        info!("✓ Module 1: Ghost Map Detection enabled");
+        info!("Module 1: Ghost Map Detection enabled");
     }
 
-    // Module 2: Syscall Latency Monitoring
     if enable_latency {
         let syscall_enter: &mut TracePoint = bpf
             .program_mut("monitor_syscall_enter")
@@ -257,11 +251,10 @@ async fn main() -> Result<()> {
             .try_into()?;
         syscall_exit.load()?;
         syscall_exit.attach("raw_syscalls", "sys_exit")?;
-        info!("✓ Module 2: Syscall Latency Monitoring enabled");
-        info!("⏱️  Calibrating baseline for {} seconds...", cli.calibration_period);
+        info!("Module 2: Syscall Latency Monitoring enabled");
+        info!("Calibrating baseline for {} seconds...", cli.calibration_period);
     }
 
-    // Module 3: Bytecode Integrity Checking
     if enable_bytecode {
         let bytecode_check: &mut TracePoint = bpf
             .program_mut("check_bytecode_integrity")
@@ -269,10 +262,9 @@ async fn main() -> Result<()> {
             .try_into()?;
         bytecode_check.load()?;
         bytecode_check.attach("syscalls", "sys_enter_bpf")?;
-        info!("✓ Module 3: Bytecode Integrity Checking enabled");
+        info!("Module 3: Bytecode Integrity Checking enabled");
     }
 
-    // Module 4: Hidden Process Detection
     if enable_hidden {
         let hidden_proc: &mut KProbe = bpf
             .program_mut("detect_hidden_process")
@@ -280,10 +272,9 @@ async fn main() -> Result<()> {
             .try_into()?;
         hidden_proc.load()?;
         hidden_proc.attach("__x64_sys_getdents64", 0)?;
-        info!("✓ Module 4: Hidden Process Detection enabled");
+        info!("Module 4: Hidden Process Detection enabled");
     }
 
-    // Module 5: Suspicious Hook Detection
     if enable_hooks {
         let hook_detect: &mut TracePoint = bpf
             .program_mut("detect_suspicious_hook")
@@ -291,36 +282,80 @@ async fn main() -> Result<()> {
             .try_into()?;
         hook_detect.load()?;
         hook_detect.attach("syscalls", "sys_enter_bpf")?;
-        info!("✓ Module 5: Suspicious Hook Detection enabled");
+        info!("Module 5: Suspicious Hook Detection enabled");
     }
 
-    // Initialize defense engine
     let mut engine = DefenseEngine::new(cli.output.clone(), cli.threshold)?;
 
-    // Start calibration timer
+    let (alert_tx, mut alert_rx) = mpsc::channel::<DefenseAlert>(256);
+
+    // Spawn per-CPU perf event readers
+    let mut perf_array = AsyncPerfEventArray::try_from(
+        bpf.map_mut("DEFENSE_ALERTS").context("DEFENSE_ALERTS map not found")?
+    )?;
+
+    let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
+    for cpu in cpus.iter() {
+        let mut buf = perf_array.open(*cpu, None)?;
+        let tx = alert_tx.clone();
+
+        tokio::spawn(async move {
+            let mut buffers = (0..64)
+                .map(|_| BytesMut::with_capacity(std::mem::size_of::<DefenseAlert>()))
+                .collect::<Vec<_>>();
+
+            loop {
+                match buf.read_events(&mut buffers).await {
+                    Ok(events) => {
+                        for i in 0..events.read {
+                            if buffers[i].len() >= std::mem::size_of::<DefenseAlert>() {
+                                let alert = unsafe {
+                                    std::ptr::read_unaligned(
+                                        buffers[i].as_ptr() as *const DefenseAlert
+                                    )
+                                };
+                                if tx.send(alert).await.is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!("Error reading perf events: {}", e);
+                        sleep(Duration::from_millis(100)).await;
+                    }
+                }
+            }
+        });
+    }
+    drop(alert_tx);
+
+    info!("Alert monitoring started on {} CPUs", cpus.len());
+
+    // Calibration timer — signals engine when calibration period ends
+    let (cal_tx, cal_rx) = tokio::sync::oneshot::channel::<()>();
     let calibration_period = cli.calibration_period;
     tokio::spawn(async move {
         sleep(Duration::from_secs(calibration_period)).await;
+        let _ = cal_tx.send(());
     });
+    let mut cal_rx = Some(cal_rx);
 
-    // Start alert monitoring
-    let bpf_clone = bpf;
-    tokio::spawn(async move {
-        monitor_alerts(bpf_clone).await;
-    });
-
-    // Start event processing
-    info!("🚀 Defense engine active. Press Ctrl+C to stop.");
-    
-    let mut interval = tokio::time::interval(Duration::from_millis(100));
-    let mut calibration_done = false;
+    info!("Defense engine active. Press Ctrl+C to stop.");
 
     loop {
         tokio::select! {
-            _ = interval.tick() => {
-                if !calibration_done && !engine.calibrating {
-                    calibration_done = true;
+            Some(alert) = alert_rx.recv() => {
+                engine.process_alert(&alert);
+            }
+            _ = async {
+                if let Some(rx) = cal_rx.take() {
+                    let _ = rx.await;
+                } else {
+                    std::future::pending::<()>().await;
                 }
+            } => {
+                engine.finish_calibration();
             }
             _ = signal::ctrl_c() => {
                 break;
@@ -328,78 +363,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!("🛑 Shutting down...");
+    info!("Shutting down...");
     engine.print_summary();
 
     Ok(())
 }
-
-async fn monitor_alerts(mut bpf: Bpf) {
-    let mut alerts: PerfEventArray<_> = match bpf.map_mut("DEFENSE_ALERTS") {
-        Ok(map) => match PerfEventArray::try_from(map) {
-            Ok(perf) => perf,
-            Err(e) => {
-                error!("Failed to get DEFENSE_ALERTS perf array: {}", e);
-                return;
-            }
-        },
-        Err(e) => {
-            error!("Failed to get DEFENSE_ALERTS map: {}", e);
-            return;
-        }
-    };
-
-    let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
-    let mut buffers = Vec::new();
-
-    for cpu in cpus.iter() {
-        if let Ok(buf) = alerts.open(*cpu, None) {
-            buffers.push(buf);
-        }
-    }
-
-    info!("📊 Alert monitoring started on {} CPUs", cpus.len());
-
-    loop {
-        sleep(Duration::from_millis(100)).await;
-
-        for buf in buffers.iter_mut() {
-            while let Ok(events) = buf.read_events(&mut []) {
-                for event_data in events {
-                    if event_data.len() >= std::mem::size_of::<DefenseAlert>() {
-                        let alert = unsafe {
-                            std::ptr::read(event_data.as_ptr() as *const DefenseAlert)
-                        };
-                        log_alert(&alert);
-                    }
-                }
-            }
-        }
-    }
-}
-
-fn log_alert(alert: &DefenseAlert) {
-    let alert_type_str = match alert.alert_type {
-        ALERT_GHOST_MAP => "🗺️  Ghost Map",
-        ALERT_SYSCALL_LATENCY => "⏱️  Syscall Latency",
-        ALERT_BYTECODE_TAMPER => "🔧 Bytecode Tamper",
-        ALERT_HIDDEN_PROCESS => "👻 Hidden Process",
-        ALERT_SUSPICIOUS_HOOK => "🪝 Suspicious Hook",
-        _ => "❓ Unknown",
-    };
-
-    let severity_str = match alert.severity {
-        1 => "LOW",
-        2 => "MEDIUM",
-        3 => "HIGH",
-        4 => "CRITICAL",
-        _ => "UNKNOWN",
-    };
-
-    warn!(
-        "🚨 [{}] {} - PID={}, context={}",
-        severity_str, alert_type_str, alert.pid, alert.context
-    );
-}
-
-// Made with Bob
