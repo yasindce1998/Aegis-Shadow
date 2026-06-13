@@ -419,8 +419,7 @@ async fn process_event_buf(
         };
         for buf in bufs.iter().take(events.read) {
             if buf.len() >= std::mem::size_of::<EventHeader>() {
-                let event =
-                    unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EventHeader) };
+                let event = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EventHeader) };
                 log_event(&event);
             }
         }

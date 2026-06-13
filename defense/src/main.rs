@@ -201,12 +201,10 @@ async fn main() -> Result<()> {
             loop {
                 match buf.read_events(&mut buffers).await {
                     Ok(events) => {
-                        for i in 0..events.read {
-                            if buffers[i].len() >= std::mem::size_of::<DefenseAlert>() {
+                        for buf in buffers.iter().take(events.read) {
+                            if buf.len() >= std::mem::size_of::<DefenseAlert>() {
                                 let alert = unsafe {
-                                    std::ptr::read_unaligned(
-                                        buffers[i].as_ptr() as *const DefenseAlert
-                                    )
+                                    std::ptr::read_unaligned(buf.as_ptr() as *const DefenseAlert)
                                 };
                                 if tx.send(alert).await.is_err() {
                                     return;
