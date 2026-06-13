@@ -3,9 +3,9 @@ use aya::{
     include_bytes_aligned,
     maps::AsyncPerfEventArray,
     programs::{KProbe, TracePoint},
-    Bpf, Btf,
+    Ebpf, Btf,
 };
-use aya_log::BpfLogger;
+use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
 use common::{
@@ -197,11 +197,11 @@ async fn main() -> Result<()> {
     info!("Aegis-Shadow Defense Engine Starting...");
 
     #[cfg(debug_assertions)]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = Ebpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/debug/defense"
     ))?;
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = Ebpf::load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/release/defense"
     ))?;
 
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
         warn!("BTF not available - CO-RE features may not work");
     }
 
-    if let Err(e) = BpfLogger::init(&mut bpf) {
+    if let Err(e) = EbpfLogger::init(&mut bpf) {
         warn!("Failed to initialize eBPF logger: {}", e);
     }
 
@@ -291,7 +291,7 @@ async fn main() -> Result<()> {
 
     // Spawn per-CPU perf event readers
     let mut perf_array = AsyncPerfEventArray::try_from(
-        bpf.map_mut("DEFENSE_ALERTS").context("DEFENSE_ALERTS map not found")?
+        bpf.take_map("DEFENSE_ALERTS").context("DEFENSE_ALERTS map not found")?
     )?;
 
     let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
