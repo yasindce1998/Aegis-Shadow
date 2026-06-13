@@ -246,7 +246,7 @@ impl DefenseEngine {
     pub fn finish_calibration(&mut self) {
         if let Some(ref cal) = self.calibration_data {
             let now_ns = cal.sample_start_ns + cal.total_samples.saturating_mul(1_000_000);
-            for (&alert_type, _) in &cal.counts_per_type {
+            for &alert_type in cal.counts_per_type.keys() {
                 self.baseline_rates
                     .insert(alert_type, cal.baseline_rate(alert_type, now_ns));
             }
@@ -256,7 +256,7 @@ impl DefenseEngine {
 
     pub fn finish_calibration_at(&mut self, end_ns: u64) {
         if let Some(ref cal) = self.calibration_data {
-            for (&alert_type, _) in &cal.counts_per_type {
+            for &alert_type in cal.counts_per_type.keys() {
                 self.baseline_rates
                     .insert(alert_type, cal.baseline_rate(alert_type, end_ns));
             }
