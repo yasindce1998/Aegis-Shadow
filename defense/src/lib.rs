@@ -116,6 +116,38 @@ pub struct Metrics {
     pub anomaly_escalations: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeConfig {
+    #[serde(default = "default_threshold")]
+    pub threshold: u8,
+    #[serde(default = "default_window_secs")]
+    pub window_secs: u64,
+}
+
+fn default_threshold() -> u8 {
+    2
+}
+
+fn default_window_secs() -> u64 {
+    30
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            threshold: default_threshold(),
+            window_secs: default_window_secs(),
+        }
+    }
+}
+
+impl RuntimeConfig {
+    pub fn load_from_file(path: &str) -> Option<Self> {
+        let content = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&content).ok()
+    }
+}
+
 pub struct DefenseEngine {
     pub alert_count: StdHashMap<u32, u64>,
     pid_history: StdHashMap<u32, PidHistory>,
@@ -152,6 +184,11 @@ impl DefenseEngine {
     pub fn with_window(mut self, window_ns: u64) -> Self {
         self.window_duration_ns = window_ns;
         self
+    }
+
+    pub fn apply_config(&mut self, config: &RuntimeConfig) {
+        self.threshold = config.threshold;
+        self.window_duration_ns = config.window_secs * 1_000_000_000;
     }
 
     pub fn process_alert(&mut self, alert: &DefenseAlert) -> Option<AlertRecord> {

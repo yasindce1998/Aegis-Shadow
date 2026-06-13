@@ -9,11 +9,11 @@ use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
 use common::DefenseAlert;
-use defense::DefenseEngine;
+use defense::{DefenseEngine, RuntimeConfig};
 use log::{error, info, warn};
 use tokio::signal;
 use tokio::sync::mpsc;
-use tokio::time::{sleep, Duration};
+use tokio::time::{interval, sleep, Duration};
 
 #[derive(Debug, Parser)]
 #[command(name = "aegis-shadow-defense")]
@@ -58,6 +58,10 @@ struct Cli {
     /// Baseline calibration period (seconds)
     #[arg(long, default_value = "60")]
     calibration_period: u64,
+
+    /// Path to runtime config file (JSON, hot-reloaded every 5s)
+    #[arg(long)]
+    config: Option<String>,
 }
 
 #[tokio::main]
@@ -233,7 +237,14 @@ async fn main() -> Result<()> {
     });
     let mut cal_rx = Some(cal_rx);
 
+    let config_path = cli.config.clone();
+    let mut config_interval = interval(Duration::from_secs(5));
+    config_interval.tick().await; // consume initial tick
+
     info!("Defense engine active. Press Ctrl+C to stop.");
+    if config_path.is_some() {
+        info!("Config hot-reload enabled (polling every 5s)");
+    }
 
     loop {
         tokio::select! {
@@ -248,6 +259,13 @@ async fn main() -> Result<()> {
                 }
             } => {
                 engine.finish_calibration();
+            }
+            _ = config_interval.tick(), if config_path.is_some() => {
+                if let Some(ref path) = config_path {
+                    if let Some(cfg) = RuntimeConfig::load_from_file(path) {
+                        engine.apply_config(&cfg);
+                    }
+                }
             }
             _ = signal::ctrl_c() => {
                 break;
