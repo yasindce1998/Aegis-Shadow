@@ -16,6 +16,7 @@ use common::{
     EVENT_TIMESTOMPED, EVENT_C2_AUTH_FAILED, EVENT_TELEMETRY_MUTED,
     BPF_PIN_PATH,
 };
+use offense::{parse_tty_device, parse_spoof_ppid, parse_timestomp};
 use log::{info, warn, error, debug};
 use std::fs;
 use std::path::Path;
@@ -473,41 +474,5 @@ fn log_credential_capture(capture: &CredentialCapture) {
           capture.pid, capture.fd, data_str);
 }
 
-fn parse_tty_device(s: &str) -> Option<(u32, u32)> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let major = parts[0].parse::<u32>().ok()?;
-    let minor = parts[1].parse::<u32>().ok()?;
-    Some((major, minor))
-}
-
-fn parse_spoof_ppid(s: &str) -> Option<(u32, u32)> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let pid = parts[0].parse::<u32>().ok()?;
-    let fake_ppid = parts[1].parse::<u32>().ok()?;
-    Some((pid, fake_ppid))
-}
-
-fn parse_timestomp(s: &str) -> Option<(u64, TimestompEntry)> {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 4 {
-        return None;
-    }
-    let inode = parts[0].parse::<u64>().ok()?;
-    let atime = parts[1].parse::<u64>().ok()?;
-    let mtime = parts[2].parse::<u64>().ok()?;
-    let ctime = parts[3].parse::<u64>().ok()?;
-    
-    Some((inode, TimestompEntry {
-        fake_mtime_sec: mtime,
-        fake_atime_sec: atime,
-        fake_ctime_sec: ctime,
-    }))
-}
 
 // Made with Bob

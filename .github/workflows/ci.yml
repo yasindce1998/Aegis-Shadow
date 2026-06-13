@@ -74,11 +74,27 @@ jobs:
           cp target/bpfel-unknown-none/release/offense target/bpfel-unknown-none/debug/offense
           cp target/bpfel-unknown-none/release/defense target/bpfel-unknown-none/debug/defense
       - name: Build offense
-        run: cargo build --package offense
+        run: cargo build --package offense --features ebpf-bin
       - name: Build defense
-        run: cargo build --package defense
+        run: cargo build --package defense --features ebpf-bin
       - name: Clippy
-        run: cargo clippy --package offense --package defense -- -D warnings
+        run: cargo clippy --package offense --package defense --features ebpf-bin -- -D warnings
+
+  test:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: tests
+      - name: Test offense
+        run: cargo test --package offense --test integration
+      - name: Test defense
+        run: cargo test --package defense --test integration
+      - name: Test adversarial scenarios
+        run: cargo test --package integration-tests --test adversarial
 
   fmt:
     name: Format check

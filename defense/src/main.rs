@@ -8,16 +8,9 @@ use aya::{
 use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
-use common::{
-    DefenseAlert,
-    ALERT_GHOST_MAP, ALERT_SYSCALL_LATENCY, ALERT_BYTECODE_TAMPER,
-    ALERT_HIDDEN_PROCESS, ALERT_SUSPICIOUS_HOOK,
-};
+use common::DefenseAlert;
+use defense::DefenseEngine;
 use log::{info, warn, error};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap as StdHashMap;
-use std::fs::File;
-use std::io::Write;
 use tokio::signal;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -67,114 +60,6 @@ struct Cli {
     calibration_period: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct AlertRecord {
-    timestamp: u64,
-    alert_type: String,
-    severity: String,
-    pid: u32,
-    context: u64,
-    details: String,
-}
-
-struct DefenseEngine {
-    alert_count: StdHashMap<u32, u64>,
-    output_file: Option<File>,
-    threshold: u8,
-    calibrating: bool,
-}
-
-impl DefenseEngine {
-    fn new(output_path: Option<String>, threshold: u8) -> Result<Self> {
-        let output_file = if let Some(path) = output_path {
-            Some(File::create(path)?)
-        } else {
-            None
-        };
-
-        Ok(Self {
-            alert_count: StdHashMap::new(),
-            output_file,
-            threshold,
-            calibrating: true,
-        })
-    }
-
-    fn process_alert(&mut self, alert: &DefenseAlert) {
-        if alert.severity < self.threshold as u32 {
-            return;
-        }
-
-        *self.alert_count.entry(alert.alert_type).or_insert(0) += 1;
-
-        let alert_type_str = match alert.alert_type {
-            ALERT_GHOST_MAP => "Ghost Map Detected",
-            ALERT_SYSCALL_LATENCY => "Syscall Latency Anomaly",
-            ALERT_BYTECODE_TAMPER => "Bytecode Tampering",
-            ALERT_HIDDEN_PROCESS => "Hidden Process Detected",
-            ALERT_SUSPICIOUS_HOOK => "Suspicious Hook Detected",
-            _ => "Unknown Alert",
-        };
-
-        let severity_str = match alert.severity {
-            1 => "LOW",
-            2 => "MEDIUM",
-            3 => "HIGH",
-            4 => "CRITICAL",
-            _ => "UNKNOWN",
-        };
-
-        let details = if alert.alert_type == ALERT_SYSCALL_LATENCY {
-            let latency_ns = u64::from_le_bytes([
-                alert.details[0], alert.details[1], alert.details[2], alert.details[3],
-                alert.details[4], alert.details[5], alert.details[6], alert.details[7],
-            ]);
-            format!("syscall={}, latency={}ns", alert.context, latency_ns)
-        } else {
-            format!("context={}", alert.context)
-        };
-
-        warn!(
-            "[{}] {} - PID={}, {}",
-            severity_str, alert_type_str, alert.pid, details
-        );
-
-        if let Some(ref mut file) = self.output_file {
-            let record = AlertRecord {
-                timestamp: alert.timestamp_ns,
-                alert_type: alert_type_str.to_string(),
-                severity: severity_str.to_string(),
-                pid: alert.pid,
-                context: alert.context,
-                details: details.clone(),
-            };
-
-            if let Ok(json) = serde_json::to_string(&record) {
-                let _ = writeln!(file, "{}", json);
-            }
-        }
-    }
-
-    fn print_summary(&self) {
-        info!("Detection Summary:");
-        for (alert_type, count) in &self.alert_count {
-            let type_str = match *alert_type {
-                ALERT_GHOST_MAP => "Ghost Maps",
-                ALERT_SYSCALL_LATENCY => "Syscall Latency",
-                ALERT_BYTECODE_TAMPER => "Bytecode Tampering",
-                ALERT_HIDDEN_PROCESS => "Hidden Processes",
-                ALERT_SUSPICIOUS_HOOK => "Suspicious Hooks",
-                _ => "Unknown",
-            };
-            info!("  {} - {} alerts", type_str, count);
-        }
-    }
-
-    fn finish_calibration(&mut self) {
-        self.calibrating = false;
-        info!("Calibration complete - active monitoring started");
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -205,7 +90,7 @@ async fn main() -> Result<()> {
         "../../target/bpfel-unknown-none/release/defense"
     ))?;
 
-    if let Ok(_btf) = Btf::from_sys_fs() {
+    if Btf::from_sys_fs().is_ok() {
         info!("BTF loaded from /sys/kernel/btf/vmlinux");
     } else {
         warn!("BTF not available - CO-RE features may not work");
@@ -364,7 +249,11 @@ async fn main() -> Result<()> {
     }
 
     info!("Shutting down...");
-    engine.print_summary();
+    info!("Total alerts processed: {}", engine.total_alerts());
+    for (alert_type, count) in &engine.alert_count {
+        let type_str = defense::classify_alert_type(*alert_type);
+        info!("  {} - {} alerts", type_str, count);
+    }
 
     Ok(())
 }

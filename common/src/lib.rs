@@ -253,7 +253,7 @@ pub struct DnsExfilChunk {
 /// Timestamp override entry for timestomping.
 /// Key: inode number (u64). Value: this struct.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TimestompEntry {
     /// Fake mtime in seconds since epoch.
     pub fake_mtime_sec: u64,

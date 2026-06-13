@@ -3,6 +3,19 @@ name = "offense"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "offense"
+path = "src/lib.rs"
+
+[[bin]]
+name = "offense"
+path = "src/main.rs"
+required-features = ["ebpf-bin"]
+
+[features]
+default = []
+ebpf-bin = []
+
 [dependencies]
 anyhow = { workspace = true }
 aya = { version = "~0.13", features = ["async_tokio"] }
