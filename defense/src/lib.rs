@@ -418,10 +418,8 @@ impl CorrelationGraph {
         // Add edges: same-PID or temporal proximity
         for (i, existing) in self.nodes.iter().enumerate() {
             let same_pid = existing.pid == alert.pid && alert.pid != 0;
-            let temporal = alert
-                .timestamp_ns
-                .saturating_sub(existing.timestamp_ns)
-                < TEMPORAL_PROXIMITY_NS;
+            let temporal =
+                alert.timestamp_ns.saturating_sub(existing.timestamp_ns) < TEMPORAL_PROXIMITY_NS;
 
             if same_pid || temporal {
                 self.edges.push((i, node_id));
@@ -435,7 +433,8 @@ impl CorrelationGraph {
             let remove_count = self.nodes.len() - 256;
             self.nodes.drain(..remove_count);
             // Reindex edges
-            self.edges.retain(|(a, b)| *a >= remove_count && *b >= remove_count);
+            self.edges
+                .retain(|(a, b)| *a >= remove_count && *b >= remove_count);
             for edge in &mut self.edges {
                 edge.0 -= remove_count;
                 edge.1 -= remove_count;

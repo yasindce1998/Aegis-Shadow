@@ -360,7 +360,8 @@ static SYSCALL_ARG_HIST: HashMap<u64, u32> = HashMap::with_max_entries(4096, 0);
 
 /// Module 7: Calibration flag (index 0: 0=calibrating, 1=armed).
 #[map]
-static SYSCALL_BASELINE_FLAG: aya_ebpf::maps::Array<u8> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+static SYSCALL_BASELINE_FLAG: aya_ebpf::maps::Array<u8> =
+    aya_ebpf::maps::Array::with_max_entries(1, 0);
 
 /// Module 8: Per-PID network port bitmask (ports 0-63 as bits).
 #[map]
@@ -486,7 +487,9 @@ fn try_detect_syscall_anomaly(ctx: &TracePointContext) -> Result<u32, i64> {
     let _ = SYSCALL_ARG_HIST.insert(&hash, &(count + 1), 0);
 
     // Check if baseline is armed
-    let armed = unsafe { SYSCALL_BASELINE_FLAG.get(0) }.copied().unwrap_or(0);
+    let armed = unsafe { SYSCALL_BASELINE_FLAG.get(0) }
+        .copied()
+        .unwrap_or(0);
     if armed == 0 {
         return Ok(0);
     }
