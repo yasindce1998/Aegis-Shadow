@@ -123,7 +123,10 @@ fn setup_honeypots(bpf: &mut Ebpf) -> Result<Vec<u32>> {
         }
     }
 
-    info!("Honeypot maps pinned at {} for eBPF-side detection", HONEYPOT_PIN_DIR);
+    info!(
+        "Honeypot maps pinned at {} for eBPF-side detection",
+        HONEYPOT_PIN_DIR
+    );
 
     Ok(vec![])
 }
