@@ -471,10 +471,9 @@ async fn main() -> Result<()> {
                 .context("OWN_PROG_IDS map not found")?,
         )?;
         for (_name, prog) in bpf.programs() {
-            if let Some(info) = prog.info().ok() {
-                if let Ok(id) = info.id() {
-                    own_prog_ids.insert(id, 1u8, 0)?;
-                }
+            if let Ok(info) = prog.info() {
+                let id = info.id();
+                own_prog_ids.insert(id, 1u8, 0)?;
             }
         }
         info!("✓ OWN_PROG_IDS populated for cloaking");
