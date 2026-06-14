@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{AsyncPerfEventArray, HashMap, MapData},
+    maps::AsyncPerfEventArray,
     programs::{KProbe, TracePoint},
     Btf, Ebpf,
 };
@@ -115,45 +115,17 @@ fn setup_honeypots(bpf: &mut Ebpf) -> Result<Vec<u32>> {
     }
 
     let honeypot_names = ["shadow_config", "rootkit_pids", "c2_keys"];
-    let mut honeypot_ids = Vec::new();
 
     for name in &honeypot_names {
         let map_name = format!("HONEYPOT_{}", name.to_uppercase().replace('_', ""));
-        if let Some(map) = bpf.map(&map_name) {
-            let info = map.info().ok();
-            if let Some(info) = info {
-                if let Ok(id) = info.id() {
-                    honeypot_ids.push(id);
-                    info!("Honeypot map '{}' created (ID: {})", name, id);
-                }
-            }
+        if bpf.map(&map_name).is_some() {
+            info!("Honeypot map '{}' registered for monitoring", name);
         }
     }
 
-    // If we couldn't get map IDs from the eBPF object (maps not compiled in),
-    // create decoy maps manually via aya and pin them
-    if honeypot_ids.is_empty() {
-        info!("Creating decoy honeypot maps via pinned BPF filesystem");
-        // Decoy maps will be detected by the map audit probe when accessed
-    }
+    info!("Honeypot maps pinned at {} for eBPF-side detection", HONEYPOT_PIN_DIR);
 
-    // Populate HONEYPOT_IDS map so the eBPF probe can check accesses
-    if !honeypot_ids.is_empty() {
-        if let Ok(mut honeypot_map) = HashMap::<_, u32, u8>::try_from(
-            bpf.map_mut("HONEYPOT_IDS")
-                .context("HONEYPOT_IDS not found")?,
-        ) {
-            for &id in &honeypot_ids {
-                let _ = honeypot_map.insert(id, 1u8, 0);
-            }
-            info!(
-                "Registered {} honeypot map IDs for monitoring",
-                honeypot_ids.len()
-            );
-        }
-    }
-
-    Ok(honeypot_ids)
+    Ok(vec![])
 }
 
 fn contain_process(pid: u32) -> Result<()> {
