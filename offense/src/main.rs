@@ -466,15 +466,16 @@ async fn main() -> Result<()> {
 
     // Populate OWN_PROG_IDS for cloaking (after all programs are loaded)
     if cli.enable_bpf_cloak {
+        let prog_ids: Vec<u32> = bpf
+            .programs()
+            .filter_map(|(_name, prog)| prog.info().ok().map(|info| info.id()))
+            .collect();
         let mut own_prog_ids: HashMap<_, u32, u8> = HashMap::try_from(
             bpf.map_mut("OWN_PROG_IDS")
                 .context("OWN_PROG_IDS map not found")?,
         )?;
-        for (_name, prog) in bpf.programs() {
-            if let Ok(info) = prog.info() {
-                let id = info.id();
-                own_prog_ids.insert(id, 1u8, 0)?;
-            }
+        for id in prog_ids {
+            own_prog_ids.insert(id, 1u8, 0)?;
         }
         info!("✓ OWN_PROG_IDS populated for cloaking");
     }
