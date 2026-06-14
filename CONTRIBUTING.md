@@ -307,15 +307,15 @@ Any other relevant information
 
 ```
 aegis-shadow/
-├── common/              # Shared data structures
+├── common/              # Shared data structures (#![no_std])
 ├── offense-ebpf/        # Offensive eBPF programs
 ├── offense/             # Offensive user-space loader
 ├── defense-ebpf/        # Defensive eBPF programs
 ├── defense/             # Defensive user-space engine
+├── integration-tests/   # Adversarial offense-vs-defense tests
 ├── xtask/               # Build automation
-├── tests/               # Test scripts
-├── docs/                # Additional documentation
-└── examples/            # Usage examples
+├── tests/               # Shell-based test scripts
+└── assets/              # Project assets (logo, etc.)
 ```
 
 ## 🎓 Learning Resources

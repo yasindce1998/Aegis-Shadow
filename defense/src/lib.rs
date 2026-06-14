@@ -1,9 +1,11 @@
 use common::{
-    DefenseAlert, ALERT_BYTECODE_TAMPER, ALERT_GHOST_MAP, ALERT_HIDDEN_PROCESS,
-    ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_LATENCY,
+    DefenseAlert, ALERT_AUTO_DETACH, ALERT_BYTECODE_TAMPER, ALERT_CONTAINMENT, ALERT_GHOST_MAP,
+    ALERT_HIDDEN_PROCESS, ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC,
+    ALERT_NET_BASELINE, ALERT_PROG_INVENTORY, ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_ANOMALY,
+    ALERT_SYSCALL_LATENCY, ALERT_TRACEPOINT_GAP,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap as StdHashMap, VecDeque};
+use std::collections::{HashMap as StdHashMap, HashSet, VecDeque};
 use std::fs::File;
 use std::io::Write;
 
@@ -158,6 +160,11 @@ pub struct DefenseEngine {
     pub calibrating: bool,
     window_duration_ns: u64,
     metrics: Metrics,
+    pub auto_detach_candidates: StdHashMap<u32, u32>,
+    pub contained_pids: HashSet<u32>,
+    pub correlation_graph: CorrelationGraph,
+    pub auto_detach_enabled: bool,
+    pub auto_contain_enabled: bool,
 }
 
 impl DefenseEngine {
@@ -178,6 +185,11 @@ impl DefenseEngine {
             calibrating: true,
             window_duration_ns: DEFAULT_WINDOW_NS,
             metrics: Metrics::default(),
+            auto_detach_candidates: StdHashMap::new(),
+            contained_pids: HashSet::new(),
+            correlation_graph: CorrelationGraph::new(),
+            auto_detach_enabled: false,
+            auto_contain_enabled: false,
         })
     }
 
@@ -239,6 +251,8 @@ impl DefenseEngine {
         if anomaly_score >= ANOMALY_CRITICAL {
             self.metrics.anomaly_escalations += 1;
         }
+
+        self.correlation_graph.add_alert(alert);
 
         let is_attack_chain = history.distinct_alert_types() >= ATTACK_CHAIN_THRESHOLD;
         if is_attack_chain {
@@ -326,6 +340,161 @@ impl DefenseEngine {
             .map(|h| h.distinct_alert_types())
             .unwrap_or(0)
     }
+
+    pub fn should_auto_detach(&self, prog_id: u32) -> bool {
+        if !self.auto_detach_enabled {
+            return false;
+        }
+        self.auto_detach_candidates
+            .get(&prog_id)
+            .copied()
+            .unwrap_or(0)
+            >= ATTACK_CHAIN_THRESHOLD
+    }
+
+    pub fn record_suspicious_prog(&mut self, prog_id: u32) {
+        *self.auto_detach_candidates.entry(prog_id).or_insert(0) += 1;
+    }
+
+    pub fn should_contain(&self, pid: u32) -> bool {
+        if !self.auto_contain_enabled {
+            return false;
+        }
+        if self.contained_pids.contains(&pid) {
+            return false;
+        }
+        self.pid_distinct_types(pid) >= ATTACK_CHAIN_THRESHOLD
+    }
+
+    pub fn mark_contained(&mut self, pid: u32) {
+        self.contained_pids.insert(pid);
+    }
+
+    pub fn correlation_summary(&self) -> String {
+        let chains = self.correlation_graph.find_chains();
+        if chains.is_empty() {
+            return String::from("[]");
+        }
+        serde_json::to_string(&chains).unwrap_or_else(|_| String::from("[]"))
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Alert Correlation Graph (DAG)
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlertNode {
+    pub id: usize,
+    pub alert_type: u32,
+    pub pid: u32,
+    pub timestamp_ns: u64,
+    pub severity: u32,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CorrelationGraph {
+    nodes: Vec<AlertNode>,
+    edges: Vec<(usize, usize)>,
+}
+
+const TEMPORAL_PROXIMITY_NS: u64 = 1_000_000_000; // 1 second
+
+impl CorrelationGraph {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add_alert(&mut self, alert: &DefenseAlert) {
+        let node_id = self.nodes.len();
+        let node = AlertNode {
+            id: node_id,
+            alert_type: alert.alert_type,
+            pid: alert.pid,
+            timestamp_ns: alert.timestamp_ns,
+            severity: alert.severity,
+        };
+
+        // Add edges: same-PID or temporal proximity
+        for (i, existing) in self.nodes.iter().enumerate() {
+            let same_pid = existing.pid == alert.pid && alert.pid != 0;
+            let temporal = alert
+                .timestamp_ns
+                .saturating_sub(existing.timestamp_ns)
+                < TEMPORAL_PROXIMITY_NS;
+
+            if same_pid || temporal {
+                self.edges.push((i, node_id));
+            }
+        }
+
+        self.nodes.push(node);
+
+        // Prune old nodes (keep last 256)
+        if self.nodes.len() > 256 {
+            let remove_count = self.nodes.len() - 256;
+            self.nodes.drain(..remove_count);
+            // Reindex edges
+            self.edges.retain(|(a, b)| *a >= remove_count && *b >= remove_count);
+            for edge in &mut self.edges {
+                edge.0 -= remove_count;
+                edge.1 -= remove_count;
+            }
+            for (i, node) in self.nodes.iter_mut().enumerate() {
+                node.id = i;
+            }
+        }
+    }
+
+    pub fn find_chains(&self) -> Vec<Vec<usize>> {
+        // Find connected components with 3+ nodes (attack chains)
+        let n = self.nodes.len();
+        if n == 0 {
+            return Vec::new();
+        }
+
+        let mut visited = vec![false; n];
+        let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+        for &(a, b) in &self.edges {
+            if a < n && b < n {
+                adj[a].push(b);
+                adj[b].push(a);
+            }
+        }
+
+        let mut chains = Vec::new();
+        for start in 0..n {
+            if visited[start] {
+                continue;
+            }
+            let mut component = Vec::new();
+            let mut stack = vec![start];
+            while let Some(node) = stack.pop() {
+                if node >= n || visited[node] {
+                    continue;
+                }
+                visited[node] = true;
+                component.push(node);
+                for &neighbor in &adj[node] {
+                    if !visited[neighbor] {
+                        stack.push(neighbor);
+                    }
+                }
+            }
+            if component.len() >= ATTACK_CHAIN_THRESHOLD as usize {
+                chains.push(component);
+            }
+        }
+        chains
+    }
+
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
 }
 
 pub fn classify_alert_type(alert_type: u32) -> &'static str {
@@ -335,6 +504,15 @@ pub fn classify_alert_type(alert_type: u32) -> &'static str {
         ALERT_BYTECODE_TAMPER => "Bytecode Tampering",
         ALERT_HIDDEN_PROCESS => "Hidden Process Detected",
         ALERT_SUSPICIOUS_HOOK => "Suspicious Hook Detected",
+        ALERT_PROG_INVENTORY => "Program Inventory Gap",
+        ALERT_SYSCALL_ANOMALY => "Syscall Argument Anomaly",
+        ALERT_NET_BASELINE => "Network Behavior Anomaly",
+        ALERT_MEMFD_EXEC => "Memory-Backed Execution",
+        ALERT_MAP_AUDIT => "BPF Map C2 Signature",
+        ALERT_TRACEPOINT_GAP => "Rapid BPF Detach",
+        ALERT_AUTO_DETACH => "Auto-Detach Triggered",
+        ALERT_CONTAINMENT => "Process Contained",
+        ALERT_HONEYPOT_READ => "Honeypot Map Accessed",
         _ => "Unknown Alert",
     }
 }

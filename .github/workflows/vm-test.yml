@@ -1,0 +1,70 @@
+name: VM Runtime Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'offense/**'
+      - 'offense-ebpf/**'
+      - 'defense/**'
+      - 'defense-ebpf/**'
+      - 'common/**'
+      - 'tests/**'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  vm-test:
+    name: eBPF end-to-end (offense vs defense)
+    runs-on: [self-hosted, linux, ebpf]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: vm-test
+
+      - name: Install bpf-linker
+        run: cargo install bpf-linker --locked
+
+      - name: Install jq
+        run: |
+          if ! command -v jq &>/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq jq
+          fi
+
+      - name: Build eBPF programs
+        run: |
+          cargo +nightly build --package offense-ebpf \
+            --target bpfel-unknown-none \
+            -Z build-std=core \
+            --release
+          cargo +nightly build --package defense-ebpf \
+            --target bpfel-unknown-none \
+            -Z build-std=core \
+            --release
+
+      - name: Build user-space binaries
+        run: cargo build --release --features ebpf-bin
+
+      - name: Run VM harness
+        run: |
+          chmod +x tests/vm-harness.sh tests/lib/harness-utils.sh
+          sudo ./tests/vm-harness.sh \
+            --interface eth0 \
+            --output /tmp/vm-test-results.json
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vm-test-results
+          path: /tmp/vm-test-results.json
+          if-no-files-found: ignore

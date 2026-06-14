@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_unsafe)]
 
 use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns},
@@ -9,7 +10,9 @@ use aya_ebpf::{
 };
 use common::{
     DefenseAlert, LatencyBaseline, ALERT_BYTECODE_TAMPER, ALERT_GHOST_MAP, ALERT_HIDDEN_PROCESS,
-    ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_LATENCY,
+    ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC, ALERT_NET_BASELINE,
+    ALERT_PROG_INVENTORY, ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_ANOMALY, ALERT_SYSCALL_LATENCY,
+    ALERT_TRACEPOINT_GAP, MAGIC_BYTES,
 };
 
 // ──────────────────────────────────────────────
@@ -333,6 +336,508 @@ fn fnv1a_hash(data: &[u8]) -> u64 {
     }
 
     hash
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// NEW DEFENSIVE MODULES (6-11 + Honeypot)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ──────────────────────────────────────────────
+// Maps for new modules
+// ──────────────────────────────────────────────
+
+/// Module 6: Track last seen prog_id for gap detection.
+#[map]
+static LAST_PROG_ID: aya_ebpf::maps::Array<u32> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+/// Module 6: Set of prog IDs we've seen.
+#[map]
+static PROG_SEEN: HashMap<u32, u8> = HashMap::with_max_entries(1024, 0);
+
+/// Module 7: Syscall argument hash frequency table.
+#[map]
+static SYSCALL_ARG_HIST: HashMap<u64, u32> = HashMap::with_max_entries(4096, 0);
+
+/// Module 7: Calibration flag (index 0: 0=calibrating, 1=armed).
+#[map]
+static SYSCALL_BASELINE_FLAG: aya_ebpf::maps::Array<u8> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+/// Module 8: Per-PID network port bitmask (ports 0-63 as bits).
+#[map]
+static PID_NET_PROFILE: HashMap<u32, u64> = HashMap::with_max_entries(1024, 0);
+
+/// Module 8: Network baseline calibration flag.
+#[map]
+static NET_BASELINE_FLAG: aya_ebpf::maps::Array<u8> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+/// Module 9: PIDs that called memfd_create (pid → timestamp_ns).
+#[map]
+static MEMFD_WATCH: HashMap<u32, u64> = HashMap::with_max_entries(256, 0);
+
+/// Module 10: Known-bad signature patterns (up to 8, each 4 bytes stored as u32).
+#[map]
+static AUDIT_SIGS: aya_ebpf::maps::Array<u32> = aya_ebpf::maps::Array::with_max_entries(8, 0);
+
+/// Module 11: Detach counter (index 0 = count, index 1 = window start timestamp hi, index 2 = lo).
+#[map]
+static DETACH_STATE: aya_ebpf::maps::Array<u64> = aya_ebpf::maps::Array::with_max_entries(2, 0);
+
+/// Honeypot: Map IDs that are honeypots (map_id → 1).
+#[map]
+static HONEYPOT_IDS: HashMap<u32, u8> = HashMap::with_max_entries(16, 0);
+
+// ──────────────────────────────────────────────
+// MODULE 6: eBPF Program Inventory
+// Detect prog_id gaps indicating cloaking.
+// Hook: tracepoint/syscalls/sys_enter_bpf
+// ──────────────────────────────────────────────
+
+const BPF_PROG_GET_NEXT_ID: u32 = 11;
+
+#[tracepoint]
+pub fn detect_prog_inventory(ctx: TracePointContext) -> u32 {
+    try_detect_prog_inventory(&ctx).unwrap_or_default()
+}
+
+fn try_detect_prog_inventory(ctx: &TracePointContext) -> Result<u32, i64> {
+    let cmd: u32 = unsafe { ctx.read_at(16).map_err(|_| 1i64)? };
+
+    if cmd != BPF_PROG_GET_NEXT_ID {
+        return Ok(0);
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    // Read the start_id argument (offset 24 in tracepoint args for bpf syscall)
+    let start_id: u32 = unsafe { ctx.read_at(24).unwrap_or(0) };
+
+    // Check for ID gap: if start_id - last_seen_id > 1, there's a gap
+    let last_id = unsafe { LAST_PROG_ID.get(0) }.copied().unwrap_or(0);
+
+    if start_id > last_id + 1 && last_id > 0 {
+        let alert = DefenseAlert {
+            alert_type: ALERT_PROG_INVENTORY,
+            severity: 3,
+            pid,
+            _pad: 0,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: start_id as u64,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..4].copy_from_slice(&last_id.to_le_bytes());
+                d[4..8].copy_from_slice(&start_id.to_le_bytes());
+                d
+            },
+        };
+        DEFENSE_ALERTS.output(ctx, &alert, 0);
+    }
+
+    // Update last seen
+    unsafe {
+        if let Some(ptr) = LAST_PROG_ID.get_ptr_mut(0) {
+            *ptr = start_id;
+        }
+    }
+    let _ = PROG_SEEN.insert(&start_id, &1u8, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 7: Syscall Argument Anomaly Profiling
+// Hash first arg of key syscalls, track frequency.
+// Alert on never-before-seen patterns after baseline.
+// Hook: tracepoint/raw_syscalls/sys_enter
+// ──────────────────────────────────────────────
+
+const SYS_EXECVE: u64 = 59;
+const SYS_OPEN: u64 = 2;
+const SYS_CONNECT: u64 = 42;
+const SYS_SOCKET: u64 = 41;
+
+#[tracepoint]
+pub fn detect_syscall_anomaly(ctx: TracePointContext) -> u32 {
+    try_detect_syscall_anomaly(&ctx).unwrap_or_default()
+}
+
+fn try_detect_syscall_anomaly(ctx: &TracePointContext) -> Result<u32, i64> {
+    // raw_syscalls/sys_enter: offset 8 = syscall nr (id), offset 16 = args[0]
+    let syscall_nr: u64 = unsafe { ctx.read_at(8).map_err(|_| 1i64)? };
+
+    if syscall_nr != SYS_EXECVE
+        && syscall_nr != SYS_OPEN
+        && syscall_nr != SYS_CONNECT
+        && syscall_nr != SYS_SOCKET
+    {
+        return Ok(0);
+    }
+
+    let arg0: u64 = unsafe { ctx.read_at(16).unwrap_or(0) };
+
+    // Hash syscall_nr + arg0 for a composite key
+    let mut key_bytes = [0u8; 16];
+    key_bytes[0..8].copy_from_slice(&syscall_nr.to_le_bytes());
+    key_bytes[8..16].copy_from_slice(&arg0.to_le_bytes());
+    let hash = fnv1a_hash(&key_bytes);
+
+    // Update frequency
+    let count = unsafe { SYSCALL_ARG_HIST.get(&hash) }.copied().unwrap_or(0);
+    let _ = SYSCALL_ARG_HIST.insert(&hash, &(count + 1), 0);
+
+    // Check if baseline is armed
+    let armed = unsafe { SYSCALL_BASELINE_FLAG.get(0) }.copied().unwrap_or(0);
+    if armed == 0 {
+        return Ok(0);
+    }
+
+    // If this is a brand new pattern (count was 0), alert
+    if count == 0 {
+        let pid_tgid = bpf_get_current_pid_tgid();
+        let pid = (pid_tgid >> 32) as u32;
+
+        let alert = DefenseAlert {
+            alert_type: ALERT_SYSCALL_ANOMALY,
+            severity: 2,
+            pid,
+            _pad: 0,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: syscall_nr,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..8].copy_from_slice(&hash.to_le_bytes());
+                d
+            },
+        };
+        DEFENSE_ALERTS.output(ctx, &alert, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 8: Network Behavior Baseline
+// Track per-PID destination port profile.
+// Alert on new port categories after baseline.
+// Hook: kprobe/tcp_connect
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn detect_net_anomaly(ctx: ProbeContext) -> u32 {
+    try_detect_net_anomaly(&ctx).unwrap_or_default()
+}
+
+fn try_detect_net_anomaly(ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    // arg0 = struct sock *sk; we read inet_dport at offset 12 of inet_sock
+    // Simplified: read dport from sock arg (offset varies by kernel)
+    // For research, we use arg1 as address family hint and derive port from context
+    let sk_ptr: u64 = ctx.arg(0).ok_or(1i64)?;
+    if sk_ptr == 0 {
+        return Ok(0);
+    }
+
+    // Read destination port from sk->__sk_common.skc_dport (offset 12)
+    let dport: u16 = unsafe {
+        aya_ebpf::helpers::bpf_probe_read_kernel((sk_ptr + 12) as *const u16).unwrap_or(0)
+    };
+    let dport = u16::from_be(dport);
+
+    if dport == 0 {
+        return Ok(0);
+    }
+
+    // Map port to a bit position (0-63 for ports 0-1023, grouped above)
+    let bit_pos = if dport < 1024 {
+        (dport / 16) as u32 // 64 buckets for well-known ports
+    } else {
+        63 // all high ports share one bucket
+    };
+
+    let bit_mask: u64 = 1u64 << bit_pos;
+    let current_profile = unsafe { PID_NET_PROFILE.get(&pid) }.copied().unwrap_or(0);
+
+    if current_profile & bit_mask == 0 {
+        // New port category for this PID
+        let new_profile = current_profile | bit_mask;
+        let _ = PID_NET_PROFILE.insert(&pid, &new_profile, 0);
+
+        // Check if baseline is armed
+        let armed = unsafe { NET_BASELINE_FLAG.get(0) }.copied().unwrap_or(0);
+        if armed != 0 {
+            let severity = if dport < 1024 && (dport == 4444 || dport == 1337 || dport == 31337) {
+                4 // CRITICAL for known C2 ports
+            } else if bit_pos == 63 {
+                2 // MEDIUM for high ports
+            } else {
+                3 // HIGH for new well-known port category
+            };
+
+            let alert = DefenseAlert {
+                alert_type: ALERT_NET_BASELINE,
+                severity,
+                pid,
+                _pad: 0,
+                timestamp_ns: unsafe { bpf_ktime_get_ns() },
+                context: dport as u64,
+                details: {
+                    let mut d = [0u8; 16];
+                    d[0..8].copy_from_slice(&new_profile.to_le_bytes());
+                    d
+                },
+            };
+            DEFENSE_ALERTS.output(ctx, &alert, 0);
+        }
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 9: Memory-Backed Exec Detection
+// Detect memfd_create → execveat chain (fileless malware).
+// Hook: kprobe/__x64_sys_memfd_create + kprobe/do_execveat_common
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn detect_memfd_create(ctx: ProbeContext) -> u32 {
+    try_detect_memfd_create(&ctx).unwrap_or_default()
+}
+
+fn try_detect_memfd_create(_ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+    let ts = unsafe { bpf_ktime_get_ns() };
+
+    let _ = MEMFD_WATCH.insert(&pid, &ts, 0);
+    Ok(0)
+}
+
+#[kprobe]
+pub fn detect_memfd_exec(ctx: ProbeContext) -> u32 {
+    try_detect_memfd_exec(&ctx).unwrap_or_default()
+}
+
+fn try_detect_memfd_exec(ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    // Check if this PID recently called memfd_create
+    let create_ts = match unsafe { MEMFD_WATCH.get(&pid) } {
+        Some(ts) => *ts,
+        None => return Ok(0),
+    };
+
+    let now = unsafe { bpf_ktime_get_ns() };
+    let elapsed_ns = now.saturating_sub(create_ts);
+
+    // Alert if execveat within 60 seconds of memfd_create
+    const SIXTY_SECONDS_NS: u64 = 60_000_000_000;
+    if elapsed_ns > SIXTY_SECONDS_NS {
+        let _ = MEMFD_WATCH.remove(&pid);
+        return Ok(0);
+    }
+
+    let alert = DefenseAlert {
+        alert_type: ALERT_MEMFD_EXEC,
+        severity: 4, // CRITICAL — strong fileless malware indicator
+        pid,
+        _pad: 0,
+        timestamp_ns: now,
+        context: elapsed_ns,
+        details: {
+            let mut d = [0u8; 16];
+            d[0..8].copy_from_slice(&create_ts.to_le_bytes());
+            d
+        },
+    };
+    DEFENSE_ALERTS.output(ctx, &alert, 0);
+
+    let _ = MEMFD_WATCH.remove(&pid);
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 10: BPF Map Content Auditing
+// Check map updates for known C2 signatures.
+// Hook: tracepoint/syscalls/sys_enter_bpf (BPF_MAP_UPDATE_ELEM)
+// ──────────────────────────────────────────────
+
+const BPF_MAP_UPDATE_ELEM: u32 = 2;
+const BPF_MAP_LOOKUP_ELEM: u32 = 1;
+
+#[tracepoint]
+pub fn audit_map_content(ctx: TracePointContext) -> u32 {
+    try_audit_map_content(&ctx).unwrap_or_default()
+}
+
+fn try_audit_map_content(ctx: &TracePointContext) -> Result<u32, i64> {
+    let cmd: u32 = unsafe { ctx.read_at(16).map_err(|_| 1i64)? };
+
+    if cmd == BPF_MAP_LOOKUP_ELEM {
+        // Honeypot check: read map_fd from args (offset 24)
+        let map_fd: u32 = unsafe { ctx.read_at(24).unwrap_or(0) };
+
+        if unsafe { HONEYPOT_IDS.get(&map_fd) }.is_some() {
+            let pid_tgid = bpf_get_current_pid_tgid();
+            let pid = (pid_tgid >> 32) as u32;
+
+            let alert = DefenseAlert {
+                alert_type: ALERT_HONEYPOT_READ,
+                severity: 4,
+                pid,
+                _pad: 0,
+                timestamp_ns: unsafe { bpf_ktime_get_ns() },
+                context: map_fd as u64,
+                details: [0u8; 16],
+            };
+            DEFENSE_ALERTS.output(ctx, &alert, 0);
+        }
+        return Ok(0);
+    }
+
+    if cmd != BPF_MAP_UPDATE_ELEM {
+        return Ok(0);
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    // Read value pointer from args (offset 32 for value_ptr in bpf_attr)
+    let value_ptr: u64 = unsafe { ctx.read_at(32).unwrap_or(0) };
+    if value_ptr == 0 {
+        return Ok(0);
+    }
+
+    // Read first 4 bytes of value to check for known signatures
+    let first_bytes: u32 =
+        unsafe { aya_ebpf::helpers::bpf_probe_read_user(value_ptr as *const u32).unwrap_or(0) };
+
+    // Check against MAGIC_BYTES (0xDEADBEEF)
+    let magic_u32 = u32::from_be_bytes(MAGIC_BYTES);
+    if first_bytes == magic_u32 {
+        let alert = DefenseAlert {
+            alert_type: ALERT_MAP_AUDIT,
+            severity: 3,
+            pid,
+            _pad: 0,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: value_ptr,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..4].copy_from_slice(&first_bytes.to_le_bytes());
+                d
+            },
+        };
+        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        return Ok(0);
+    }
+
+    // Check against configured audit signatures
+    let mut i = 0u32;
+    while i < 8 {
+        if let Some(&sig) = unsafe { AUDIT_SIGS.get(i) } {
+            if sig != 0 && first_bytes == sig {
+                let alert = DefenseAlert {
+                    alert_type: ALERT_MAP_AUDIT,
+                    severity: 3,
+                    pid,
+                    _pad: 0,
+                    timestamp_ns: unsafe { bpf_ktime_get_ns() },
+                    context: i as u64,
+                    details: {
+                        let mut d = [0u8; 16];
+                        d[0..4].copy_from_slice(&first_bytes.to_le_bytes());
+                        d[4..8].copy_from_slice(&sig.to_le_bytes());
+                        d
+                    },
+                };
+                DEFENSE_ALERTS.output(ctx, &alert, 0);
+                return Ok(0);
+            }
+        }
+        i += 1;
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 11: Tracepoint Coverage Monitor
+// Track BPF program detachment rate.
+// Alert if rapid detach burst (anti-forensics indicator).
+// Hook: kprobe/bpf_prog_put
+// ──────────────────────────────────────────────
+
+const DETACH_WINDOW_NS: u64 = 10_000_000_000; // 10 seconds
+const DETACH_THRESHOLD: u64 = 3;
+
+#[kprobe]
+pub fn detect_rapid_detach(ctx: ProbeContext) -> u32 {
+    try_detect_rapid_detach(&ctx).unwrap_or_default()
+}
+
+fn try_detect_rapid_detach(ctx: &ProbeContext) -> Result<u32, i64> {
+    let now = unsafe { bpf_ktime_get_ns() };
+
+    // DETACH_STATE[0] = detach count, DETACH_STATE[1] = window start timestamp
+    let window_start = unsafe { DETACH_STATE.get(1) }.copied().unwrap_or(0);
+    let count = unsafe { DETACH_STATE.get(0) }.copied().unwrap_or(0);
+
+    if window_start == 0 || now.saturating_sub(window_start) > DETACH_WINDOW_NS {
+        // Start new window
+        unsafe {
+            if let Some(ptr) = DETACH_STATE.get_ptr_mut(0) {
+                *ptr = 1;
+            }
+            if let Some(ptr) = DETACH_STATE.get_ptr_mut(1) {
+                *ptr = now;
+            }
+        }
+        return Ok(0);
+    }
+
+    // Increment count
+    let new_count = count + 1;
+    unsafe {
+        if let Some(ptr) = DETACH_STATE.get_ptr_mut(0) {
+            *ptr = new_count;
+        }
+    }
+
+    if new_count >= DETACH_THRESHOLD {
+        let pid_tgid = bpf_get_current_pid_tgid();
+        let pid = (pid_tgid >> 32) as u32;
+
+        let alert = DefenseAlert {
+            alert_type: ALERT_TRACEPOINT_GAP,
+            severity: 3,
+            pid,
+            _pad: 0,
+            timestamp_ns: now,
+            context: new_count,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..8].copy_from_slice(&window_start.to_le_bytes());
+                d
+            },
+        };
+        DEFENSE_ALERTS.output(ctx, &alert, 0);
+
+        // Reset window after alert
+        unsafe {
+            if let Some(ptr) = DETACH_STATE.get_ptr_mut(0) {
+                *ptr = 0;
+            }
+            if let Some(ptr) = DETACH_STATE.get_ptr_mut(1) {
+                *ptr = now;
+            }
+        }
+    }
+
+    Ok(0)
 }
 
 // ──────────────────────────────────────────────

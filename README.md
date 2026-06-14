@@ -16,13 +16,14 @@
 Aegis-Shadow is an educational research project that demonstrates both offensive and
 defensive uses of Linux eBPF technology. It consists of two modules:
 
-- **Shadow** (Offense): An eBPF-based rootkit that can hide processes, intercept
-  network traffic via XDP, obfuscate file reads, and persist across loader restarts.
-- **Aegis** (Defense): A runtime security shield that detects ghost BPF maps,
-  monitors syscall latency anomalies, and audits loaded BPF programs for dangerous
-  helper usage.
+- **Shadow** (Offense): An eBPF-based rootkit with 13 features including process hiding,
+  XDP-based C2 with ChaCha20 encryption and HMAC authentication, file obfuscation,
+  credential harvesting, DNS exfiltration, and timestomping.
+- **Aegis** (Defense): A runtime detection engine with 5 eBPF-based detection modules
+  plus intelligent user-space analysis including anomaly scoring, attack chain
+  correlation, calibration-based baselines, and hot-reloadable configuration.
 
-## ⚠️ Safety Warning
+## Warning
 
 **This project is for educational and research purposes only.**
 
@@ -63,12 +64,13 @@ sudo pkill defense
 
 | Directory | Purpose |
 |---|---|
-| `common/` | Shared data structures (eBPF + user-space) |
+| `common/` | Shared data structures and constants (`#![no_std]`) |
 | `offense-ebpf/` | Kernel-space rootkit eBPF programs |
 | `offense/` | User-space rootkit loader and CLI |
 | `defense-ebpf/` | Kernel-space defensive eBPF probes |
 | `defense/` | User-space detection engine and CLI |
 | `xtask/` | Build automation |
+| `integration-tests/` | Adversarial offense-vs-defense test suite |
 
 ## Usage
 
@@ -93,27 +95,36 @@ sudo ./target/release/offense \
 
 ### Defense (Detection Engine)
 
-The defense module enables detection modules via flags:
+The defense module enables detection modules via flags and provides intelligent alert analysis:
 
 ```bash
 # Enable all detection modules
 sudo ./target/release/defense --all-modules
 
-# Enable specific modules
+# Enable specific modules with hot-reload config
 sudo ./target/release/defense \
     --ghost-maps \
     --syscall-latency \
     --bytecode-check \
+    --config /etc/aegis/config.json \
     --output /tmp/alerts.json
+
+# Custom calibration and threshold
+sudo ./target/release/defense --all-modules \
+    --threshold 3 \
+    --calibration-period 120
 ```
 
-**Available flags:** `--verbose`, `--output`, `--threshold`, `--all-modules`, `--ghost-maps`, `--syscall-latency`, `--bytecode-check`, `--hidden-process`, `--suspicious-hooks`, `--calibration-period`
+**Available flags:** `--verbose`, `--output`, `--threshold`, `--all-modules`, `--ghost-maps`, `--syscall-latency`, `--bytecode-check`, `--hidden-process`, `--suspicious-hooks`, `--calibration-period`, `--config`
 
-📖 **For detailed usage examples, see [USAGE.md](USAGE.md)**
+For detailed usage examples, see [USAGE.md](USAGE.md)
 
 ## Running Tests
 
 ```bash
+# Run integration tests (user-space, no root required)
+cargo test -p integration-tests
+
 # Run automated test scripts (requires root, in VM)
 sudo ./tests/test_offense.sh
 sudo ./tests/test_defense.sh
@@ -122,7 +133,7 @@ sudo ./tests/test_defense.sh
 make test
 ```
 
-📖 **For manual testing procedures, see [USAGE.md](USAGE.md#testing)**
+For manual testing procedures, see [USAGE.md](USAGE.md#testing)
 
 ## License
 

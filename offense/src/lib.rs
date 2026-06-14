@@ -1,8 +1,10 @@
 use common::{
     CredentialCapture, EventHeader, RootkitConfig, TimestompEntry, EVENT_ANCESTRY_SPOOFED,
-    EVENT_ANTI_DETACH, EVENT_C2_AUTH_FAILED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED,
-    EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN,
-    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
+    EVENT_ANTI_DETACH, EVENT_BPF_CLOAKED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED,
+    EVENT_CONTAINER_PROBE, EVENT_CRED_RELAYED, EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED,
+    EVENT_ICMP_EXFIL, EVENT_KALLSYMS_HIDDEN, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED,
+    EVENT_MODULE_MASQUERADE, EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN,
+    EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED, EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -18,6 +20,16 @@ pub enum EventClassification {
     Timestomped { pid: u32, inode: u64 },
     C2AuthFailed { encrypted: u64 },
     TelemetryMuted { pid: u32 },
+    NetnsHidden { pid: u32, netns_ino: u64 },
+    BpfCloaked { pid: u32, prog_id: u64 },
+    ModuleMasquerade { pid: u32, inode: u64 },
+    MemfdStaged { pid: u32, fd: u64 },
+    SyslogStripped { pid: u32, bytes: u64 },
+    BytecodeWiped { pid: u32 },
+    IcmpExfil { seq: u64 },
+    SocketCloned { pid: u32, cookie: u64 },
+    CredRelayed { pid: u32, bytes: u64 },
+    ContainerProbe { pid: u32, ns_ino: u64 },
     Unknown { event_type: u32 },
 }
 
@@ -57,6 +69,40 @@ pub fn classify_event(event: &EventHeader) -> EventClassification {
             encrypted: event.context,
         },
         EVENT_TELEMETRY_MUTED => EventClassification::TelemetryMuted { pid: event.pid },
+        EVENT_NETNS_HIDDEN => EventClassification::NetnsHidden {
+            pid: event.pid,
+            netns_ino: event.context,
+        },
+        EVENT_BPF_CLOAKED => EventClassification::BpfCloaked {
+            pid: event.pid,
+            prog_id: event.context,
+        },
+        EVENT_MODULE_MASQUERADE => EventClassification::ModuleMasquerade {
+            pid: event.pid,
+            inode: event.context,
+        },
+        EVENT_MEMFD_STAGED => EventClassification::MemfdStaged {
+            pid: event.pid,
+            fd: event.context,
+        },
+        EVENT_SYSLOG_STRIPPED => EventClassification::SyslogStripped {
+            pid: event.pid,
+            bytes: event.context,
+        },
+        EVENT_BYTECODE_WIPED => EventClassification::BytecodeWiped { pid: event.pid },
+        EVENT_ICMP_EXFIL => EventClassification::IcmpExfil { seq: event.context },
+        EVENT_SOCKET_CLONED => EventClassification::SocketCloned {
+            pid: event.pid,
+            cookie: event.context,
+        },
+        EVENT_CRED_RELAYED => EventClassification::CredRelayed {
+            pid: event.pid,
+            bytes: event.context,
+        },
+        EVENT_CONTAINER_PROBE => EventClassification::ContainerProbe {
+            pid: event.pid,
+            ns_ino: event.context,
+        },
         _ => EventClassification::Unknown {
             event_type: event.event_type,
         },

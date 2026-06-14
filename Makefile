@@ -1,4 +1,4 @@
-.PHONY: setup build-ebpf build clean load-offense load-defense test
+.PHONY: setup build-ebpf build clean load-offense load-defense test test-vm
 
 # Build all eBPF programs
 build-ebpf:
@@ -37,6 +37,11 @@ test:
 	sudo ./target/release/offense cleanup
 	kill $$(pgrep -f "sleep 9999") 2>/dev/null || true
 	@echo "=== Test complete ==="
+
+# Run VM runtime tests (requires root + eBPF support)
+test-vm:
+	@echo "Running VM runtime tests (requires root + eBPF support)..."
+	sudo ./tests/vm-harness.sh $(ARGS)
 
 # Environment verification
 verify-env:
