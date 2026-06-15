@@ -1,3 +1,6 @@
+pub mod error;
+pub use error::DefenseError;
+
 use common::{
     DefenseAlert, ALERT_AUTO_DETACH, ALERT_BYTECODE_TAMPER, ALERT_CONTAINMENT, ALERT_GHOST_MAP,
     ALERT_HIDDEN_PROCESS, ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC,
@@ -168,7 +171,7 @@ pub struct DefenseEngine {
 }
 
 impl DefenseEngine {
-    pub fn new(output_path: Option<String>, threshold: u8) -> anyhow::Result<Self> {
+    pub fn new(output_path: Option<String>, threshold: u8) -> Result<Self, DefenseError> {
         let output_file = if let Some(path) = output_path {
             Some(File::create(path)?)
         } else {
