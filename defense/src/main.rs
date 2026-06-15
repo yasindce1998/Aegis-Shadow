@@ -13,7 +13,7 @@ use common::{
     ALERT_SUSPICIOUS_HOOK,
 };
 use defense::{classify_alert_type, DefenseEngine, RuntimeConfig};
-use log::{error, info, warn};
+use tracing::{error, info, warn};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -164,10 +164,15 @@ fn contain_process(pid: u32) -> Result<()> {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if cli.verbose { "debug" } else { "info" }),
-    )
-    .init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| {
+                    tracing_subscriber::EnvFilter::new(if cli.verbose { "debug" } else { "info" })
+                }),
+        )
+        .with_target(false)
+        .init();
 
     let rlim = libc::rlimit {
         rlim_cur: libc::RLIM_INFINITY,

