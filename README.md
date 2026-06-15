@@ -16,12 +16,14 @@
 Aegis-Shadow is an educational research project that demonstrates both offensive and
 defensive uses of Linux eBPF technology. It consists of two modules:
 
-- **Shadow** (Offense): An eBPF-based rootkit with 13 features including process hiding,
+- **Shadow** (Offense): An eBPF-based rootkit with 23 features spanning process hiding,
   XDP-based C2 with ChaCha20 encryption and HMAC authentication, file obfuscation,
-  credential harvesting, DNS exfiltration, and timestomping.
-- **Aegis** (Defense): A runtime detection engine with 5 eBPF-based detection modules
+  credential harvesting, DNS exfiltration, ICMP covert channels, network namespace hiding,
+  eBPF program cloaking, container escape probes, and anti-forensics bytecode wiping.
+- **Aegis** (Defense): A runtime detection engine with 14 eBPF-based detection modules
   plus intelligent user-space analysis including anomaly scoring, attack chain
-  correlation, calibration-based baselines, and hot-reloadable configuration.
+  correlation, calibration-based baselines, auto-detach of malicious programs,
+  process containment, honeypot maps, and hot-reloadable configuration.
 
 ## Warning
 
@@ -34,7 +36,7 @@ defensive uses of Linux eBPF technology. It consists of two modules:
 
 ## Requirements
 
-- **Host**: macOS with UTM or QEMU
+- **Host**: macOS/Linux with UTM, QEMU, or VirtualBox
 - **Guest VM**: Ubuntu 24.04 LTS, Linux Kernel 6.8+
 - **Rust**: Nightly toolchain
 - **Tools**: bpf-linker, bpftool, clang, llvm, libelf-dev
@@ -48,7 +50,7 @@ bash verify-env.sh
 # 2. Build everything
 make build
 
-# 3. Start offensive rootkit (loads all 13 features)
+# 3. Start offensive rootkit (loads all 23 features)
 sudo ./target/release/offense --iface eth0 --hide-pid 1234
 
 # 4. Run defense detection (in another terminal)
@@ -65,9 +67,9 @@ sudo pkill defense
 | Directory | Purpose |
 |---|---|
 | `common/` | Shared data structures and constants (`#![no_std]`) |
-| `offense-ebpf/` | Kernel-space rootkit eBPF programs |
+| `offense-ebpf/` | Kernel-space rootkit eBPF programs (23 features) |
 | `offense/` | User-space rootkit loader and CLI |
-| `defense-ebpf/` | Kernel-space defensive eBPF probes |
+| `defense-ebpf/` | Kernel-space defensive eBPF probes (11 detectors) |
 | `defense/` | User-space detection engine and CLI |
 | `xtask/` | Build automation |
 | `integration-tests/` | Adversarial offense-vs-defense test suite |
@@ -76,22 +78,45 @@ sudo pkill defense
 
 ### Offense (Rootkit)
 
-The offense module loads **all 13 rootkit features automatically** on startup. Configure via optional flags:
+The offense module loads the core 13 rootkit features automatically on startup. Additional features are enabled via flags:
 
 ```bash
-# Basic usage - loads all features
+# Basic usage - loads core features
 sudo ./target/release/offense --iface eth0
 
-# With optional configurations
+# With extended features enabled
 sudo ./target/release/offense \
     --iface eth0 \
     --hide-pid 1234 \
     --obfuscate-inode 98765 \
     --monitor-tty 136:0 \
-    --pin-maps
+    --pin-maps \
+    --enable-icmp-exfil \
+    --enable-container-probe
 ```
 
-**Available flags:** `--iface`, `--verbose`, `--hide-pid`, `--obfuscate-inode`, `--monitor-tty`, `--spoof-ppid`, `--timestomp`, `--pin-maps`
+**Available flags:**
+
+| Flag | Description |
+|---|---|
+| `--iface <name>` | Network interface for XDP/TC attachment |
+| `--verbose` | Enable debug-level logging |
+| `--hide-pid <pid>` | Add a PID to the hidden process list on startup |
+| `--obfuscate-inode <inode>` | Add an inode to the file obfuscation list |
+| `--monitor-tty <major:minor>` | Monitor a TTY device for credential harvesting |
+| `--spoof-ppid <pid:fake_ppid>` | Spoof a process's parent PID |
+| `--timestomp <inode:atime:mtime:ctime>` | Set fake timestamps (epoch seconds) |
+| `--pin-maps` | Pin BPF maps to `/sys/fs/bpf/shadow` for persistence |
+| `--enable-netns-hide` | Enable network namespace hiding |
+| `--enable-bpf-cloak` | Enable eBPF program cloaking (hides own prog IDs) |
+| `--enable-module-mask` | Enable kernel module masquerading in /proc/modules |
+| `--enable-memfd` | Enable memory-only payload staging (memfd + execveat) |
+| `--enable-syslog-strip` | Enable syslog write stripping |
+| `--wipe-bytecode` | Activate anti-forensics bytecode wipe (programs become no-ops) |
+| `--enable-icmp-exfil` | Enable ICMP covert channel exfiltration |
+| `--enable-socket-clone` | Enable socket cloning / connection shadowing |
+| `--enable-cred-relay` | Enable credential relay over C2 |
+| `--enable-container-probe` | Enable container escape probes |
 
 ### Defense (Detection Engine)
 
@@ -106,16 +131,43 @@ sudo ./target/release/defense \
     --ghost-maps \
     --syscall-latency \
     --bytecode-check \
+    --prog-inventory \
+    --memfd-detect \
+    --honeypots \
     --config /etc/aegis/config.json \
     --output /tmp/alerts.json
 
-# Custom calibration and threshold
+# With active response enabled
 sudo ./target/release/defense --all-modules \
-    --threshold 3 \
-    --calibration-period 120
+    --auto-detach \
+    --auto-contain \
+    --threshold 3
 ```
 
-**Available flags:** `--verbose`, `--output`, `--threshold`, `--all-modules`, `--ghost-maps`, `--syscall-latency`, `--bytecode-check`, `--hidden-process`, `--suspicious-hooks`, `--calibration-period`, `--config`
+**Available flags:**
+
+| Flag | Description |
+|---|---|
+| `--verbose` / `-v` | Enable debug-level logging |
+| `--output` / `-o` | Path to write JSON alert records |
+| `--threshold` / `-t` | Alert severity threshold: 1=Low, 2=Medium (default), 3=High, 4=Critical |
+| `--all-modules` | Enable all detection modules |
+| `--ghost-maps` | Enable ghost map detection |
+| `--syscall-latency` | Enable syscall latency monitoring |
+| `--bytecode-check` | Enable bytecode integrity checking |
+| `--hidden-process` | Enable hidden process detection |
+| `--suspicious-hooks` | Enable suspicious hook detection |
+| `--prog-inventory` | Enable eBPF program inventory (ID gap detection) |
+| `--syscall-anomaly` | Enable syscall argument anomaly profiling |
+| `--net-baseline` | Enable network behavior baseline |
+| `--memfd-detect` | Enable memory-backed execution detection |
+| `--map-audit` | Enable BPF map content auditing |
+| `--tracepoint-monitor` | Enable tracepoint coverage monitoring (rapid detach detection) |
+| `--auto-detach` | Automatic detachment of malicious BPF programs |
+| `--auto-contain` | Automatic process containment via cgroups |
+| `--honeypots` | Enable honeypot BPF maps |
+| `--calibration-period` | Baseline calibration duration in seconds (default: 60) |
+| `--config` | Path to runtime config JSON file (hot-reloaded every 5s) |
 
 For detailed usage examples, see [USAGE.md](USAGE.md)
 

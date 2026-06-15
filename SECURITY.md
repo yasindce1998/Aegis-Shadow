@@ -54,7 +54,7 @@ If you discover a security vulnerability in Aegis-Shadow, please report it respo
 
 6. **Defense Detection Gaps**
    - Impact: Detection may miss sophisticated attacks
-   - Mitigation: All 5 modules implemented; further tuning needed
+   - Mitigation: 14 modules implemented (11 kernel-space + 3 user-space response); further tuning needed
    - Status: ✅ MODULES COMPLETE (tuning ongoing)
 
 7. **No Audit Logging**
@@ -98,6 +98,13 @@ If you discover a security vulnerability in Aegis-Shadow, please report it respo
    - Verify BPF program integrity
    - Check for hidden processes
    - Audit BPF program attachments
+   - Detect program ID gaps (cloaking)
+   - Profile syscall argument patterns
+   - Baseline network behavior per-PID
+   - Monitor memory-backed execution (memfd)
+   - Audit BPF map content for C2 signatures
+   - Detect rapid tracepoint detach (anti-forensics)
+   - Deploy honeypot BPF maps
 
 2. **Response Procedures**
    - Isolate affected systems immediately

