@@ -1,0 +1,22 @@
+[package]
+name = "aegis-shadow-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+common = { path = "../common", features = ["user"] }
+
+[[bin]]
+name = "fuzz_c2_packet"
+path = "fuzz_targets/fuzz_c2_packet.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_c2_command"
+path = "fuzz_targets/fuzz_c2_command.rs"
+doc = false

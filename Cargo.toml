@@ -9,6 +9,7 @@ members = [
     "xtask",
     "integration-tests",
 ]
+exclude = ["fuzz"]
 
 [workspace.dependencies]
 anyhow = "1"

@@ -1,6 +1,7 @@
 #![no_std]
-// When building for user-space, std is available via the `user` feature.
-// When building for kernel (eBPF), we stay no_std.
+
+#[cfg(feature = "user")]
+pub mod c2_parse;
 
 /// Maximum number of PIDs that can be hidden simultaneously.
 pub const MAX_HIDDEN_PIDS: u32 = 64;
