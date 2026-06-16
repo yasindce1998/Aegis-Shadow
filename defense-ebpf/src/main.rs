@@ -5,7 +5,7 @@
 use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns},
     macros::{kprobe, map, tracepoint},
-    maps::{HashMap, PerfEventArray},
+    maps::{HashMap, RingBuf},
     programs::{ProbeContext, TracePointContext},
 };
 use common::{
@@ -20,7 +20,7 @@ use common::{
 // ──────────────────────────────────────────────
 
 #[map]
-static DEFENSE_ALERTS: PerfEventArray<DefenseAlert> = PerfEventArray::new(0);
+static DEFENSE_ALERTS: RingBuf = RingBuf::with_byte_size(256 * 1024, 0);
 
 #[map]
 static SYSCALL_ENTRY_TS: HashMap<u64, u64> = HashMap::with_max_entries(4096, 0);
@@ -79,7 +79,7 @@ fn try_detect_ghost_map(ctx: &TracePointContext) -> Result<u32, i64> {
             context: cmd as u64,
             details: [0u8; 16],
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
     } else if cmd == BPF_MAP_DELETE {
         // If deleting from a PID we haven't seen create maps, higher severity
         let severity = if unsafe { KNOWN_MAP_IDS.get(&pid) }.is_none() {
@@ -97,7 +97,7 @@ fn try_detect_ghost_map(ctx: &TracePointContext) -> Result<u32, i64> {
             context: cmd as u64,
             details: [0u8; 16],
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
     }
 
     Ok(0)
@@ -160,7 +160,7 @@ fn try_monitor_syscall_exit(ctx: &TracePointContext) -> Result<u32, i64> {
                 details,
             };
 
-            DEFENSE_ALERTS.output(ctx, &alert, 0);
+            let _ = DEFENSE_ALERTS.output(&alert, 0);
         }
     } else {
         let entry = LatencyBaseline {
@@ -224,7 +224,7 @@ fn try_check_bytecode_integrity(ctx: &TracePointContext) -> Result<u32, i64> {
         details,
     };
 
-    DEFENSE_ALERTS.output(ctx, &alert, 0);
+    let _ = DEFENSE_ALERTS.output(&alert, 0);
 
     Ok(0)
 }
@@ -260,7 +260,7 @@ fn try_detect_hidden_process(ctx: &ProbeContext) -> Result<u32, i64> {
             details: [0u8; 16],
         };
 
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
     }
 
     Ok(0)
@@ -312,7 +312,7 @@ fn try_detect_suspicious_hook(ctx: &TracePointContext) -> Result<u32, i64> {
         details,
     };
 
-    DEFENSE_ALERTS.output(ctx, &alert, 0);
+    let _ = DEFENSE_ALERTS.output(&alert, 0);
 
     Ok(0)
 }
@@ -431,7 +431,7 @@ fn try_detect_prog_inventory(ctx: &TracePointContext) -> Result<u32, i64> {
                 d
             },
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
     }
 
     // Update last seen
@@ -512,7 +512,7 @@ fn try_detect_syscall_anomaly(ctx: &TracePointContext) -> Result<u32, i64> {
                 d
             },
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
     }
 
     Ok(0)
@@ -591,7 +591,7 @@ fn try_detect_net_anomaly(ctx: &ProbeContext) -> Result<u32, i64> {
                     d
                 },
             };
-            DEFENSE_ALERTS.output(ctx, &alert, 0);
+            let _ = DEFENSE_ALERTS.output(&alert, 0);
         }
     }
 
@@ -656,7 +656,7 @@ fn try_detect_memfd_exec(ctx: &ProbeContext) -> Result<u32, i64> {
             d
         },
     };
-    DEFENSE_ALERTS.output(ctx, &alert, 0);
+    let _ = DEFENSE_ALERTS.output(&alert, 0);
 
     let _ = MEMFD_WATCH.remove(&pid);
     Ok(0)
@@ -696,7 +696,7 @@ fn try_audit_map_content(ctx: &TracePointContext) -> Result<u32, i64> {
                 context: map_fd as u64,
                 details: [0u8; 16],
             };
-            DEFENSE_ALERTS.output(ctx, &alert, 0);
+            let _ = DEFENSE_ALERTS.output(&alert, 0);
         }
         return Ok(0);
     }
@@ -734,7 +734,7 @@ fn try_audit_map_content(ctx: &TracePointContext) -> Result<u32, i64> {
                 d
             },
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
         return Ok(0);
     }
 
@@ -757,7 +757,7 @@ fn try_audit_map_content(ctx: &TracePointContext) -> Result<u32, i64> {
                         d
                     },
                 };
-                DEFENSE_ALERTS.output(ctx, &alert, 0);
+                let _ = DEFENSE_ALERTS.output(&alert, 0);
                 return Ok(0);
             }
         }
@@ -827,7 +827,7 @@ fn try_detect_rapid_detach(ctx: &ProbeContext) -> Result<u32, i64> {
                 d
             },
         };
-        DEFENSE_ALERTS.output(ctx, &alert, 0);
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
 
         // Reset window after alert
         unsafe {

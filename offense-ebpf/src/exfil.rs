@@ -62,7 +62,7 @@ fn try_cred_harvest(ctx: &ProbeContext) -> Result<u32, i64> {
         }
     }
 
-    CRED_EVENTS.output(ctx, &capture, 0);
+    let _ = CRED_EVENTS.output(&capture, 0);
 
     Ok(0)
 }
@@ -175,7 +175,7 @@ fn try_dns_exfil(ctx: &aya_ebpf::programs::TcContext) -> Result<i32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: seq as u64,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -267,7 +267,7 @@ fn try_icmp_exfil(ctx: &aya_ebpf::programs::TcContext) -> Result<i32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: seq as u64,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     let next_seq = seq.wrapping_add(1);
     unsafe {
@@ -318,7 +318,7 @@ fn try_tcp_sendmsg(ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: size,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }

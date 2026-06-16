@@ -44,7 +44,7 @@ fn try_anti_detach(ctx: &aya_ebpf::programs::TracePointContext) -> Result<u32, i
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: cmd as u64,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -144,7 +144,7 @@ fn try_execveat_enter(ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: now,
         context: flags as u64,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -168,7 +168,7 @@ fn try_wipe_check(ctx: &ProbeContext) -> Result<u32, i64> {
                 timestamp_ns: unsafe { bpf_ktime_get_ns() },
                 context: 1,
             };
-            EVENTS.output(ctx, &event, 0);
+            let _ = EVENTS.output(&event, 0);
         }
     }
     Ok(0)
@@ -228,7 +228,7 @@ fn try_unshare_enter(ctx: &ProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: flags,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }
@@ -266,7 +266,7 @@ fn try_commit_creds(ctx: &ProbeContext) -> Result<u32, i64> {
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: 0,
         };
-        EVENTS.output(ctx, &event, 0);
+        let _ = EVENTS.output(&event, 0);
     }
 
     Ok(0)

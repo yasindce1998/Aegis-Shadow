@@ -96,7 +96,7 @@ pub struct CommandPayload {
 }
 
 /// Unified event header for both offense and defense reporting.
-/// Sent from eBPF to user-space via PerfEventArray or RingBuf.
+/// Sent from eBPF to user-space via RingBuf.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct EventHeader {

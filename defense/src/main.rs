@@ -1,12 +1,11 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::AsyncPerfEventArray,
+    maps::RingBuf,
     programs::{KProbe, TracePoint},
     Btf, Ebpf,
 };
 use aya_log::EbpfLogger;
-use bytes::BytesMut;
 use clap::Parser;
 use common::{
     DefenseAlert, ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC, ALERT_PROG_INVENTORY,
@@ -16,7 +15,9 @@ use defense::{classify_alert_type, DefenseEngine, RuntimeConfig};
 use tracing::{error, info, warn};
 use std::fs;
 use std::io::Write;
+use std::os::fd::AsRawFd;
 use std::path::Path;
+use tokio::io::unix::AsyncFd;
 use tokio::signal;
 use tokio::sync::mpsc;
 use tokio::time::{interval, sleep, Duration};
@@ -411,47 +412,41 @@ async fn main() -> Result<()> {
 
     let (alert_tx, mut alert_rx) = mpsc::channel::<DefenseAlert>(256);
 
-    // Spawn per-CPU perf event readers
-    let mut perf_array = AsyncPerfEventArray::try_from(
+    // Spawn ring buffer reader
+    let ring_buf = RingBuf::try_from(
         bpf.take_map("DEFENSE_ALERTS")
             .context("DEFENSE_ALERTS map not found")?,
     )?;
 
-    let cpus = aya::util::online_cpus().unwrap_or_else(|_| vec![0]);
-    for cpu in cpus.iter() {
-        let mut buf = perf_array.open(*cpu, None)?;
-        let tx = alert_tx.clone();
+    let mut async_fd = AsyncFd::new(ring_buf)?;
+    let tx = alert_tx.clone();
 
-        tokio::spawn(async move {
-            let mut buffers = (0..64)
-                .map(|_| BytesMut::with_capacity(std::mem::size_of::<DefenseAlert>()))
-                .collect::<Vec<_>>();
-
-            loop {
-                match buf.read_events(&mut buffers).await {
-                    Ok(events) => {
-                        for buf in buffers.iter().take(events.read) {
-                            if buf.len() >= std::mem::size_of::<DefenseAlert>() {
-                                let alert = unsafe {
-                                    std::ptr::read_unaligned(buf.as_ptr() as *const DefenseAlert)
-                                };
-                                if tx.send(alert).await.is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("Error reading perf events: {}", e);
-                        sleep(Duration::from_millis(100)).await;
+    tokio::spawn(async move {
+        loop {
+            let mut guard = match async_fd.readable_mut().await {
+                Ok(g) => g,
+                Err(e) => {
+                    error!("DEFENSE_ALERTS readable error: {}", e);
+                    return;
+                }
+            };
+            let rb = guard.get_inner_mut();
+            while let Some(item) = rb.next() {
+                if item.len() >= std::mem::size_of::<DefenseAlert>() {
+                    let alert = unsafe {
+                        std::ptr::read_unaligned(item.as_ptr() as *const DefenseAlert)
+                    };
+                    if tx.send(alert).await.is_err() {
+                        return;
                     }
                 }
             }
-        });
-    }
+            guard.clear_ready();
+        }
+    });
     drop(alert_tx);
 
-    info!("Alert monitoring started on {} CPUs", cpus.len());
+    info!("Alert monitoring started (ring buffer mode)");
 
     // Calibration timer — signals engine when calibration period ends
     let (cal_tx, cal_rx) = tokio::sync::oneshot::channel::<()>();

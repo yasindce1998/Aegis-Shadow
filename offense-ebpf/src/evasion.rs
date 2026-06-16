@@ -165,7 +165,7 @@ fn try_setns_enter(ctx: &ProbeContext) -> Result<u32, i64> {
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: fd,
         };
-        EVENTS.output(ctx, &event, 0);
+        let _ = EVENTS.output(&event, 0);
     }
 
     Ok(0)
@@ -227,7 +227,7 @@ fn try_bpf_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
             timestamp_ns: unsafe { bpf_ktime_get_ns() },
             context: next_id as u64,
         };
-        EVENTS.output(ctx, &event, 0);
+        let _ = EVENTS.output(&event, 0);
     }
 
     Ok(0)
@@ -333,7 +333,7 @@ fn try_modules_read_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: args.inode,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(0)
 }

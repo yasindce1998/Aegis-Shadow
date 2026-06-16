@@ -101,7 +101,7 @@ fn try_shadow_xdp(ctx: &XdpContext) -> Result<u32, i64> {
                 timestamp_ns: unsafe { bpf_ktime_get_ns() },
                 context: 1,
             };
-            EVENTS.output(ctx, &event, 0);
+            let _ = EVENTS.output(&event, 0);
             return Ok(xdp_action::XDP_PASS);
         }
 
@@ -142,7 +142,7 @@ fn try_shadow_xdp(ctx: &XdpContext) -> Result<u32, i64> {
                 timestamp_ns: unsafe { bpf_ktime_get_ns() },
                 context: 0,
             };
-            EVENTS.output(ctx, &event, 0);
+            let _ = EVENTS.output(&event, 0);
             return Ok(xdp_action::XDP_PASS);
         }
 
@@ -175,7 +175,7 @@ fn try_shadow_xdp(ctx: &XdpContext) -> Result<u32, i64> {
         timestamp_ns: unsafe { bpf_ktime_get_ns() },
         context: cmd.arg1 as u64,
     };
-    EVENTS.output(ctx, &event, 0);
+    let _ = EVENTS.output(&event, 0);
 
     Ok(xdp_action::XDP_DROP)
 }
