@@ -623,7 +623,7 @@ pub fn detect_memfd_exec(ctx: ProbeContext) -> u32 {
     try_detect_memfd_exec(&ctx).unwrap_or_default()
 }
 
-fn try_detect_memfd_exec(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_detect_memfd_exec(_ctx: &ProbeContext) -> Result<u32, i64> {
     let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
@@ -782,7 +782,7 @@ pub fn detect_rapid_detach(ctx: ProbeContext) -> u32 {
     try_detect_rapid_detach(&ctx).unwrap_or_default()
 }
 
-fn try_detect_rapid_detach(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_detect_rapid_detach(_ctx: &ProbeContext) -> Result<u32, i64> {
     let now = unsafe { bpf_ktime_get_ns() };
 
     // DETACH_STATE[0] = detach count, DETACH_STATE[1] = window start timestamp

