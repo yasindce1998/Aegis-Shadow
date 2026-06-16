@@ -14,7 +14,6 @@ use common::{
 use defense::{classify_alert_type, DefenseEngine, RuntimeConfig};
 use std::fs;
 use std::io::Write;
-use std::os::fd::AsRawFd;
 use std::path::Path;
 use tokio::io::unix::AsyncFd;
 use tokio::signal;
