@@ -940,11 +940,7 @@ fn try_detect_hw_perf(_ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let current_metric = now & 0xFFFF;
-    let deviation = if current_metric > baseline_ipc {
-        current_metric - baseline_ipc
-    } else {
-        baseline_ipc - current_metric
-    };
+    let deviation = current_metric.abs_diff(baseline_ipc);
 
     if deviation > PERF_DEVIATION_THRESHOLD {
         let alert = DefenseAlert {

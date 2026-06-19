@@ -1087,7 +1087,7 @@ fn test_event_context_preserved_through_classification() {
         class2,
         EventClassification::ContainerProbe {
             pid: TEST_PID_2,
-            ns_id: 0xFF
+            ns_ino: 0xFF
         }
     );
 }
