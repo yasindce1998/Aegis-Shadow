@@ -1,0 +1,11 @@
+[package]
+name = "verification"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../common", features = ["user"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]

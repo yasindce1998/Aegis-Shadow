@@ -21,6 +21,7 @@ Aegis-Shadow is a dual-purpose eBPF-based security research platform implementin
 │  └──────────────┘       │       │  - Auto-Contain   │       │
 │                          │       │  - Honeypot Mgr   │       │
 │                          │       │  - Hot-Reload Cfg │       │
+│                          │       │  - ML Engine      │       │
 │                          │       │ JSON Logger       │       │
 │                          │       └──────────────────┘       │
 ├─────────────────────────────────────────────────────────────┤
@@ -116,6 +117,7 @@ The project uses a custom `xtask` build system:
 | `offense-ebpf` | Kernel-space rootkit eBPF programs |
 | `defense` | User-space detection engine + library |
 | `defense-ebpf` | Kernel-space defensive eBPF probes |
+| `verification` | Formal proofs (Kani) and detection coverage matrix |
 | `xtask` | Build automation |
 | `integration-tests` | Adversarial offense-vs-defense tests |
 
@@ -133,7 +135,7 @@ The project uses a custom `xtask` build system:
 - **Architecture**: x86_64
 - **Dependencies**: libbpf, clang, llvm
 
-## Offensive Features (47+ Total, 9 Advanced Modules)
+## Offensive Features (88 Total, 12 Advanced Modules)
 
 | # | Feature | Hook Point | Description |
 |---|---|---|---|
@@ -202,6 +204,22 @@ The project uses a custom `xtask` build system:
 | 73 | BPF Program Scanner | tracepoint: `syscalls/sys_enter_bpf` | Detect Falco/Tetragon/Cilium/Datadog programs |
 | 74 | Tail-Call Injection | kprobe: `bpf_prog_array_copy` | Inject into target program's tail-call array |
 | 75 | Prog Array Hijack | kprobe: `bpf_map_update_elem` | Replace security tool program FDs in prog arrays |
+| **Advanced Kernel Object Manipulation** ||||
+| 76 | task_struct Patching | kprobe: `__switch_to` | Modify process credentials/flags via direct task_struct access |
+| 77 | LSM Hook Subversion | kprobe: `security_file_open` | Override LSM decisions with `bpf_override_return` |
+| 78 | IDT Hooking | kprobe: `native_load_idt` | Monitor/shadow interrupt descriptor table modifications |
+| 79 | ftrace Self-Hiding | kretprobe: `bpf_prog_get_info_by_id` | Filter own program IDs from bpftool enumeration |
+| 80 | Kernel Live-Patch Abuse | kprobe: `klp_enable_patch` | Inject patches targeting security-relevant functions |
+| **Network Stealth Layer** ||||
+| 81 | Raw Socket C2 | XDP on interface | Port-coexistence C2 using magic markers in app-layer offset |
+| 82 | TC Traffic Injection | TC egress classifier | Inject crafted response packets without user-space sockets |
+| 83 | DNS-over-HTTPS C2 | kprobe: `tcp_sendmsg` | Domain-fronted C2 over TLS to CDN endpoints |
+| 84 | Kernel Traffic Shaping | TC egress classifier | Rate-limit/jitter C2 traffic to mimic normal patterns |
+| **Advanced Persistence** ||||
+| 85 | Obfuscated BPF Pinning | kprobe: `bpf_obj_pin` | Time-seeded randomized pin paths under /sys/fs/bpf |
+| 86 | Cgroup BPF Persistence | kprobe: `cgroup_bpf_prog_attach` | Attach to root cgroup for process-death survival |
+| 87 | Module Parameter Injection | kprobe: `module_param_sysfs_setup` | Hide config in /sys/module/<legit>/parameters/ |
+| 88 | initramfs Boot Loader | kprobe: `do_init_module` | Boot-time BPF loader via initramfs injection |
 
 ### C2 Protocol
 
@@ -217,9 +235,9 @@ The project uses a custom `xtask` build system:
 - **Map**: `ICMP_EXFIL_QUEUE` (seq_num → IcmpExfilPayload with up to 56 bytes per packet)
 - **User-space**: Queues credential captures and arbitrary data for ICMP exfiltration
 
-## Defensive Modules (14 Total)
+## Defensive Modules (18 Total)
 
-### Kernel-Space eBPF Detectors (11 Probes)
+### Kernel-Space eBPF Detectors (15 Probes)
 
 | # | Module | Hook Point | Detection Method |
 |---|---|---|---|
@@ -234,6 +252,10 @@ The project uses a custom `xtask` build system:
 | 9 | Memory-Backed Exec | kprobe: `memfd_create` + `execveat` | Detects fileless execution (memfd + AT_EMPTY_PATH) |
 | 10 | Map Content Audit | tracepoint: `sys_enter_bpf` | Scans map updates for C2 signatures (magic bytes, known ports) |
 | 11 | Tracepoint Coverage | kprobe: `bpf_prog_put` | Detects rapid program detach (anti-forensics wiping) |
+| 12 | Cross-Reference Detection | tracepoint: `sched/sched_process_fork` | Cross-references PID creation vs /proc to find hidden processes |
+| 13 | HW Performance Counters | kprobe: `perf_event_open` | Detects hook overhead via instruction/cache-miss ratio anomalies |
+| 14 | Verifier Log Analysis | tracepoint: `syscalls/sys_enter_bpf` | Flags programs using dangerous helpers (probe_write, override_return) |
+| 15 | Memory Forensics | kprobe: `schedule` | Periodic integrity checksums of kernel data structures (cred_jar, task list) |
 
 ### User-Space Response Modules (3 Modules)
 
@@ -255,6 +277,22 @@ The user-space DefenseEngine provides advanced analysis beyond raw alert forward
 - **Hot-Reload Config**: Polls a JSON config file every 5 seconds to update threshold and window without restart
 - **Metrics**: On shutdown, reports alerts_processed, alerts_suppressed, attack_chains_detected, anomaly_escalations, and per-type breakdown
 
+### Adversarial ML Detection Layer
+
+Optional module (`--enable-ml`) providing machine-learning-based evasion resistance:
+
+- **Syscall Sequence Model**: N-gram model (n=3..5) trained during calibration; detects novel syscall sequences not seen in baseline
+- **Deviation Scoring**: Log-likelihood scoring against trained model; sequences exceeding 3σ from mean escalate alert severity
+- **Evasion-Resistant Signatures**: Extracts invariant opcode-sequence patterns from observed BPF programs, ignoring register operands and NOP sleds
+
+### Formal Verification (`verification` crate)
+
+The verification crate provides mathematical guarantees about detection correctness:
+
+- **Kani Proofs**: `#[kani::proof]` functions proving no false negatives for ghost map detection, latency anomaly detection, hidden process detection, and bytecode tamper detection
+- **Detection Coverage Matrix**: Maps all 88 offense techniques to their detecting defense modules with confidence scores; identifies coverage gaps
+- **Alert Completeness**: Proves all `ALERT_*` constants have corresponding handlers in the engine
+
 ### Runtime Configuration (Hot-Reload)
 
 The defense engine accepts a `--config` path to a JSON file:
@@ -271,6 +309,6 @@ Changes are picked up every 5 seconds without restarting the engine.
 ## Future Enhancements
 
 - ARM64 support
-- Machine learning-based anomaly detection
 - Distributed C2 infrastructure
-- Kernel module-based persistence
+- GPU-accelerated ML inference for real-time classification
+- Coverage-guided fuzzing of detection gaps

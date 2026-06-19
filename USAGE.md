@@ -295,6 +295,33 @@ sudo ./target/release/offense --iface eth0 --enable-bpf-parasitism
 # Injects into their tail-call arrays and hijacks prog arrays
 ```
 
+#### 22. Advanced Kernel Object Manipulation
+```bash
+# task_struct patching, LSM subversion, IDT hooking, ftrace hiding, live-patching
+sudo ./target/release/offense --iface eth0 --enable-kernel-object
+
+# Patches task_struct fields, overrides LSM decisions, shadows IDT entries,
+# hides from bpftool enumeration, abuses kernel live-patching infrastructure
+```
+
+#### 23. Network Stealth Layer
+```bash
+# Raw socket C2, TC injection, DoH domain fronting, traffic shaping
+sudo ./target/release/offense --iface eth0 --enable-network-stealth
+
+# XDP-based port coexistence C2, TC egress packet injection without sockets,
+# DNS-over-HTTPS C2 with CDN domain fronting, kernel-level traffic shaping
+```
+
+#### 24. Advanced Persistence Mechanisms
+```bash
+# Obfuscated BPF pinning, cgroup persistence, module param injection, initramfs
+sudo ./target/release/offense --iface eth0 --enable-persistence2
+
+# Randomized BPF pin paths, cgroup attachment surviving process death,
+# hidden params in /sys/module, boot-time BPF loader via initramfs
+```
+
 #### Full Advanced Deployment
 ```bash
 # Enable all advanced modules for maximum evasion
@@ -309,7 +336,10 @@ sudo ./target/release/offense --iface eth0 \
     --enable-behavioral-ai \
     --enable-supply-chain \
     --enable-deadman-switch \
-    --enable-bpf-parasitism
+    --enable-bpf-parasitism \
+    --enable-kernel-object \
+    --enable-network-stealth \
+    --enable-persistence2
 ```
 
 ### Network C2 Commands
@@ -399,6 +429,11 @@ sudo ./target/release/defense --all-modules --output /tmp/alerts.json
 | `--auto-detach` | Automatic detachment of malicious BPF programs |
 | `--auto-contain` | Automatic process containment via cgroups |
 | `--honeypots` | Enable honeypot BPF maps |
+| `--cross-reference` | Enable cross-reference detection (proc vs BPF PID discrepancy) |
+| `--hw-perf-counters` | Enable hardware performance counter anomaly monitoring |
+| `--verifier-analysis` | Enable eBPF verifier log analysis for suspicious patterns |
+| `--memory-forensics` | Enable kernel data structure integrity monitoring |
+| `--enable-ml` | Enable adversarial ML detection layer (syscall n-gram models) |
 | `--calibration-period` | Baseline calibration duration in seconds (default: 60) |
 | `--config` | Path to runtime config JSON file (hot-reloaded every 5s) |
 
@@ -421,6 +456,14 @@ sudo ./target/release/defense \
     --memfd-detect \
     --map-audit \
     --tracepoint-monitor
+
+# Anti-detection research modules (12-15)
+sudo ./target/release/defense \
+    --cross-reference \
+    --hw-perf-counters \
+    --verifier-analysis \
+    --memory-forensics \
+    --enable-ml
 
 # Active response modules
 sudo ./target/release/defense \

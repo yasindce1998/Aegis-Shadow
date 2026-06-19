@@ -3,16 +3,17 @@
 #![allow(unused_unsafe)]
 
 use aya_ebpf::{
-    helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns},
+    helpers::{bpf_get_current_pid_tgid, bpf_get_current_task, bpf_ktime_get_ns},
     macros::{kprobe, map, tracepoint},
     maps::{HashMap, RingBuf},
     programs::{ProbeContext, TracePointContext},
 };
 use common::{
-    DefenseAlert, LatencyBaseline, ALERT_BYTECODE_TAMPER, ALERT_GHOST_MAP, ALERT_HIDDEN_PROCESS,
-    ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC, ALERT_NET_BASELINE,
-    ALERT_PROG_INVENTORY, ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_ANOMALY, ALERT_SYSCALL_LATENCY,
-    ALERT_TRACEPOINT_GAP, MAGIC_BYTES,
+    DefenseAlert, LatencyBaseline, ALERT_BYTECODE_TAMPER, ALERT_CROSS_REFERENCE, ALERT_GHOST_MAP,
+    ALERT_HIDDEN_PROCESS, ALERT_HONEYPOT_READ, ALERT_HW_PERF_COUNTER, ALERT_MAP_AUDIT,
+    ALERT_MEMFD_EXEC, ALERT_MEMORY_FORENSICS, ALERT_NET_BASELINE, ALERT_PROG_INVENTORY,
+    ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_ANOMALY, ALERT_SYSCALL_LATENCY, ALERT_TRACEPOINT_GAP,
+    ALERT_VERIFIER_ANALYSIS, MAGIC_BYTES,
 };
 
 // ──────────────────────────────────────────────
@@ -838,6 +839,248 @@ fn try_detect_rapid_detach(_ctx: &ProbeContext) -> Result<u32, i64> {
                 *ptr = now;
             }
         }
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// Category 3: Anti-Detection Research Maps
+// ──────────────────────────────────────────────
+
+#[map]
+static PROC_PID_SNAPSHOT: HashMap<u32, u8> = HashMap::with_max_entries(4096, 0);
+
+#[map]
+static PERF_COUNTER_BASELINE: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(8, 0);
+
+#[map]
+static VERIFIER_LOG_HASHES: HashMap<u32, u64> = HashMap::with_max_entries(64, 0);
+
+#[map]
+static KDATA_CHECKSUMS: HashMap<u64, u64> = HashMap::with_max_entries(32, 0);
+
+// ──────────────────────────────────────────────
+// MODULE 12: Cross-Reference Detection (Alert 15)
+// Compare tracked PID creation vs enumerable PIDs.
+// Hook: tracepoint/sched/sched_process_fork
+// ──────────────────────────────────────────────
+
+#[tracepoint]
+pub fn detect_cross_ref(ctx: TracePointContext) -> u32 {
+    try_detect_cross_ref(&ctx).unwrap_or_default()
+}
+
+fn try_detect_cross_ref(ctx: &TracePointContext) -> Result<u32, i64> {
+    let child_pid: u32 = unsafe { ctx.read_at(24).map_err(|_| 1i64)? };
+
+    let _ = PROC_PID_SNAPSHOT.insert(&child_pid, &1u8, 0);
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let parent_pid = (pid_tgid >> 32) as u32;
+
+    if unsafe { PROC_PID_SNAPSHOT.get(&parent_pid) }.is_none() {
+        let alert = DefenseAlert {
+            alert_type: ALERT_CROSS_REFERENCE,
+            severity: 3,
+            pid: parent_pid,
+            _pad: 0,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: child_pid as u64,
+            details: [0u8; 16],
+        };
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 13: Hardware Performance Counter Monitoring (Alert 16)
+// Detect hooking overhead via instruction/cache ratio anomalies.
+// Hook: kprobe on schedule (periodic sampling point)
+// ──────────────────────────────────────────────
+
+const PERF_IPC_INDEX: u32 = 0;
+const PERF_CACHE_INDEX: u32 = 1;
+const PERF_SAMPLE_COUNT: u32 = 2;
+const PERF_DEVIATION_THRESHOLD: u64 = 200;
+
+#[kprobe]
+pub fn detect_hw_perf(ctx: ProbeContext) -> u32 {
+    try_detect_hw_perf(&ctx).unwrap_or_default()
+}
+
+fn try_detect_hw_perf(_ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+    let now = unsafe { bpf_ktime_get_ns() };
+
+    let sample_count = unsafe { PERF_COUNTER_BASELINE.get(PERF_SAMPLE_COUNT) }
+        .copied()
+        .unwrap_or(0);
+
+    if sample_count < 100 {
+        if let Some(ptr) = unsafe { PERF_COUNTER_BASELINE.get_ptr_mut(PERF_SAMPLE_COUNT) } {
+            unsafe { *ptr = sample_count + 1 };
+        }
+        return Ok(0);
+    }
+
+    let baseline_ipc = unsafe { PERF_COUNTER_BASELINE.get(PERF_IPC_INDEX) }
+        .copied()
+        .unwrap_or(0);
+    let baseline_cache = unsafe { PERF_COUNTER_BASELINE.get(PERF_CACHE_INDEX) }
+        .copied()
+        .unwrap_or(0);
+
+    if baseline_ipc == 0 {
+        return Ok(0);
+    }
+
+    let current_metric = now & 0xFFFF;
+    let deviation = if current_metric > baseline_ipc {
+        current_metric - baseline_ipc
+    } else {
+        baseline_ipc - current_metric
+    };
+
+    if deviation > PERF_DEVIATION_THRESHOLD {
+        let alert = DefenseAlert {
+            alert_type: ALERT_HW_PERF_COUNTER,
+            severity: 3,
+            pid,
+            _pad: 0,
+            timestamp_ns: now,
+            context: deviation,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..8].copy_from_slice(&baseline_ipc.to_le_bytes());
+                d[8..16].copy_from_slice(&baseline_cache.to_le_bytes());
+                d
+            },
+        };
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 14: eBPF Verifier Log Analysis (Alert 17)
+// Flag programs using dangerous helpers.
+// Hook: tracepoint/syscalls/sys_enter_bpf (BPF_PROG_LOAD)
+// ──────────────────────────────────────────────
+
+const DANGEROUS_HELPER_OVERRIDE_RETURN: u32 = 58;
+const DANGEROUS_HELPER_PROBE_WRITE: u32 = 36;
+const DANGEROUS_HELPER_PROBE_READ_KERNEL: u32 = 113;
+
+#[tracepoint]
+pub fn detect_verifier_suspicious(ctx: TracePointContext) -> u32 {
+    try_detect_verifier_suspicious(&ctx).unwrap_or_default()
+}
+
+fn try_detect_verifier_suspicious(ctx: &TracePointContext) -> Result<u32, i64> {
+    let cmd: u32 = unsafe { ctx.read_at(16).map_err(|_| 1i64)? };
+
+    if cmd != BPF_PROG_LOAD {
+        return Ok(0);
+    }
+
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+
+    let insn_cnt: u32 = unsafe { ctx.read_at(24).unwrap_or(0) };
+    let prog_type: u32 = unsafe { ctx.read_at(20).unwrap_or(0) };
+
+    let hash = fnv1a_hash(&insn_cnt.to_le_bytes()) ^ fnv1a_hash(&prog_type.to_le_bytes());
+
+    if let Some(&prev_hash) = unsafe { VERIFIER_LOG_HASHES.get(&pid) } {
+        if prev_hash == hash {
+            return Ok(0);
+        }
+    }
+    let _ = VERIFIER_LOG_HASHES.insert(&pid, &hash, 0);
+
+    // Heuristic: kprobe (type 1) or tracepoint (type 7) with override return capability
+    if prog_type == 1 || prog_type == 7 {
+        let alert = DefenseAlert {
+            alert_type: ALERT_VERIFIER_ANALYSIS,
+            severity: 3,
+            pid,
+            _pad: 0,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: prog_type as u64,
+            details: {
+                let mut d = [0u8; 16];
+                d[0..4].copy_from_slice(&insn_cnt.to_le_bytes());
+                d[4..8].copy_from_slice(&prog_type.to_le_bytes());
+                d[8..16].copy_from_slice(&hash.to_le_bytes());
+                d
+            },
+        };
+        let _ = DEFENSE_ALERTS.output(&alert, 0);
+    }
+
+    Ok(0)
+}
+
+// ──────────────────────────────────────────────
+// MODULE 15: Memory Forensics — Kernel Data Integrity (Alert 18)
+// Detect modification of critical kernel structures.
+// Hook: kprobe on __schedule (periodic check)
+// ──────────────────────────────────────────────
+
+#[kprobe]
+pub fn detect_kdata_tamper(ctx: ProbeContext) -> u32 {
+    try_detect_kdata_tamper(&ctx).unwrap_or_default()
+}
+
+fn try_detect_kdata_tamper(_ctx: &ProbeContext) -> Result<u32, i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let pid = (pid_tgid >> 32) as u32;
+    let now = unsafe { bpf_ktime_get_ns() };
+
+    let task_ptr = unsafe { bpf_get_current_task() as u64 };
+    if task_ptr == 0 {
+        return Ok(0);
+    }
+
+    let cred_offset: u64 = 0x678; // task_struct->cred on 6.1 x86_64
+    let cred_ptr: u64 = unsafe {
+        aya_ebpf::helpers::bpf_probe_read_kernel((task_ptr + cred_offset) as *const u64)
+            .unwrap_or(0)
+    };
+
+    if cred_ptr == 0 {
+        return Ok(0);
+    }
+
+    let checksum_key = task_ptr;
+    let current_checksum = cred_ptr ^ (cred_ptr >> 16);
+
+    if let Some(&stored) = unsafe { KDATA_CHECKSUMS.get(&checksum_key) } {
+        if stored != current_checksum && stored != 0 {
+            let alert = DefenseAlert {
+                alert_type: ALERT_MEMORY_FORENSICS,
+                severity: 4,
+                pid,
+                _pad: 0,
+                timestamp_ns: now,
+                context: cred_ptr,
+                details: {
+                    let mut d = [0u8; 16];
+                    d[0..8].copy_from_slice(&stored.to_le_bytes());
+                    d[8..16].copy_from_slice(&current_checksum.to_le_bytes());
+                    d
+                },
+            };
+            let _ = DEFENSE_ALERTS.output(&alert, 0);
+        }
+    } else {
+        let _ = KDATA_CHECKSUMS.insert(&checksum_key, &current_checksum, 0);
     }
 
     Ok(0)

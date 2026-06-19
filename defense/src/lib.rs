@@ -1,11 +1,13 @@
 pub mod error;
+pub mod ml;
 pub use error::DefenseError;
 
 use common::{
-    DefenseAlert, ALERT_AUTO_DETACH, ALERT_BYTECODE_TAMPER, ALERT_CONTAINMENT, ALERT_GHOST_MAP,
-    ALERT_HIDDEN_PROCESS, ALERT_HONEYPOT_READ, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC,
+    DefenseAlert, ALERT_AUTO_DETACH, ALERT_BYTECODE_TAMPER, ALERT_CONTAINMENT,
+    ALERT_CROSS_REFERENCE, ALERT_GHOST_MAP, ALERT_HIDDEN_PROCESS, ALERT_HONEYPOT_READ,
+    ALERT_HW_PERF_COUNTER, ALERT_MAP_AUDIT, ALERT_MEMFD_EXEC, ALERT_MEMORY_FORENSICS,
     ALERT_NET_BASELINE, ALERT_PROG_INVENTORY, ALERT_SUSPICIOUS_HOOK, ALERT_SYSCALL_ANOMALY,
-    ALERT_SYSCALL_LATENCY, ALERT_TRACEPOINT_GAP,
+    ALERT_SYSCALL_LATENCY, ALERT_TRACEPOINT_GAP, ALERT_VERIFIER_ANALYSIS,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap as StdHashMap, HashSet, VecDeque};
@@ -168,6 +170,7 @@ pub struct DefenseEngine {
     pub correlation_graph: CorrelationGraph,
     pub auto_detach_enabled: bool,
     pub auto_contain_enabled: bool,
+    pub ml_engine: Option<ml::AdversarialMLEngine>,
 }
 
 impl DefenseEngine {
@@ -193,6 +196,7 @@ impl DefenseEngine {
             correlation_graph: CorrelationGraph::new(),
             auto_detach_enabled: false,
             auto_contain_enabled: false,
+            ml_engine: None,
         })
     }
 
@@ -236,7 +240,7 @@ impl DefenseEngine {
         );
 
         let current_rate = history.rate(self.window_duration_ns);
-        let anomaly_score = if !self.calibrating {
+        let mut anomaly_score = if !self.calibrating {
             let baseline = self
                 .baseline_rates
                 .get(&alert.alert_type)
@@ -250,6 +254,18 @@ impl DefenseEngine {
         } else {
             0.0
         };
+
+        if let Some(ref mut ml) = self.ml_engine {
+            if alert.alert_type == ALERT_SYSCALL_ANOMALY {
+                ml.record_syscall(alert.pid, alert.context as u32);
+            }
+            if !self.calibrating {
+                let ml_score = ml.score_pid(alert.pid);
+                if ml_score > 0.0 {
+                    anomaly_score = anomaly_score.max(ml_score);
+                }
+            }
+        }
 
         if anomaly_score >= ANOMALY_CRITICAL {
             self.metrics.anomaly_escalations += 1;
@@ -305,6 +321,9 @@ impl DefenseEngine {
                     .insert(alert_type, cal.baseline_rate(alert_type, now_ns));
             }
         }
+        if let Some(ref mut ml) = self.ml_engine {
+            ml.finish_calibration();
+        }
         self.calibrating = false;
     }
 
@@ -314,6 +333,9 @@ impl DefenseEngine {
                 self.baseline_rates
                     .insert(alert_type, cal.baseline_rate(alert_type, end_ns));
             }
+        }
+        if let Some(ref mut ml) = self.ml_engine {
+            ml.finish_calibration();
         }
         self.calibrating = false;
     }
@@ -515,6 +537,10 @@ pub fn classify_alert_type(alert_type: u32) -> &'static str {
         ALERT_AUTO_DETACH => "Auto-Detach Triggered",
         ALERT_CONTAINMENT => "Process Contained",
         ALERT_HONEYPOT_READ => "Honeypot Map Accessed",
+        ALERT_CROSS_REFERENCE => "Cross-Reference Anomaly",
+        ALERT_HW_PERF_COUNTER => "HW Perf Counter Deviation",
+        ALERT_VERIFIER_ANALYSIS => "Suspicious BPF Program",
+        ALERT_MEMORY_FORENSICS => "Kernel Data Tampering",
         _ => "Unknown Alert",
     }
 }

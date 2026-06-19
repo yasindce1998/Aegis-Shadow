@@ -108,6 +108,26 @@ struct Cli {
     /// Stream alerts as NDJSON to stdout (for TUI bridge)
     #[arg(long)]
     json_stdout: bool,
+
+    /// Enable cross-reference detection (module 12)
+    #[arg(long)]
+    cross_reference: bool,
+
+    /// Enable hardware performance counter monitoring (module 13)
+    #[arg(long)]
+    hw_perf_counters: bool,
+
+    /// Enable eBPF verifier log analysis (module 14)
+    #[arg(long)]
+    verifier_analysis: bool,
+
+    /// Enable kernel data structure memory forensics (module 15)
+    #[arg(long)]
+    memory_forensics: bool,
+
+    /// Enable adversarial ML detection layer
+    #[arg(long)]
+    enable_ml: bool,
 }
 
 const HONEYPOT_PIN_DIR: &str = "/sys/fs/bpf/honeypot";
@@ -228,6 +248,10 @@ async fn main() -> Result<()> {
     let enable_map_audit = enable_all || cli.map_audit;
     let enable_tp_monitor = enable_all || cli.tracepoint_monitor;
     let enable_honeypots = enable_all || cli.honeypots;
+    let enable_cross_ref = enable_all || cli.cross_reference;
+    let enable_hw_perf = enable_all || cli.hw_perf_counters;
+    let enable_verifier = enable_all || cli.verifier_analysis;
+    let enable_mem_forensics = enable_all || cli.memory_forensics;
 
     let any_enabled = enable_ghost
         || enable_latency
@@ -240,7 +264,11 @@ async fn main() -> Result<()> {
         || enable_memfd
         || enable_map_audit
         || enable_tp_monitor
-        || enable_honeypots;
+        || enable_honeypots
+        || enable_cross_ref
+        || enable_hw_perf
+        || enable_verifier
+        || enable_mem_forensics;
 
     if !any_enabled {
         warn!("No detection modules enabled. Use --all-modules or enable specific modules.");
@@ -395,6 +423,48 @@ async fn main() -> Result<()> {
         }
     }
 
+    // ─── Modules 12-15: Anti-Detection Research ───────────────────────────────
+
+    if enable_cross_ref {
+        let cross_ref: &mut TracePoint = bpf
+            .program_mut("detect_cross_ref")
+            .context("detect_cross_ref not found")?
+            .try_into()?;
+        cross_ref.load()?;
+        cross_ref.attach("sched", "sched_process_fork")?;
+        info!("Module 12: Cross-Reference Detection enabled");
+    }
+
+    if enable_hw_perf {
+        let hw_perf: &mut KProbe = bpf
+            .program_mut("detect_hw_perf")
+            .context("detect_hw_perf not found")?
+            .try_into()?;
+        hw_perf.load()?;
+        hw_perf.attach("perf_event_open", 0)?;
+        info!("Module 13: Hardware Performance Counter Monitoring enabled");
+    }
+
+    if enable_verifier {
+        let verifier_prog: &mut TracePoint = bpf
+            .program_mut("detect_verifier_suspicious")
+            .context("detect_verifier_suspicious not found")?
+            .try_into()?;
+        verifier_prog.load()?;
+        verifier_prog.attach("syscalls", "sys_enter_bpf")?;
+        info!("Module 14: eBPF Verifier Log Analysis enabled");
+    }
+
+    if enable_mem_forensics {
+        let kdata_tamper: &mut KProbe = bpf
+            .program_mut("detect_kdata_tamper")
+            .context("detect_kdata_tamper not found")?
+            .try_into()?;
+        kdata_tamper.load()?;
+        kdata_tamper.attach("schedule", 0)?;
+        info!("Module 15: Kernel Data Structure Memory Forensics enabled");
+    }
+
     // ─── Engine Initialization ──────────────────────────────────────────────────
 
     let mut engine = DefenseEngine::new(cli.output.clone(), cli.threshold)?;
@@ -406,6 +476,11 @@ async fn main() -> Result<()> {
     }
     if cli.auto_contain {
         info!("Response: Auto-Contain enabled (will isolate attack-chain PIDs via cgroups)");
+    }
+
+    if cli.enable_ml {
+        engine.ml_engine = Some(defense::ml::AdversarialMLEngine::new());
+        info!("Adversarial ML Detection Layer enabled");
     }
 
     let (alert_tx, mut alert_rx) = mpsc::channel::<DefenseAlert>(256);
