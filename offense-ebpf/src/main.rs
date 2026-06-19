@@ -3,16 +3,25 @@
 #![allow(unused_unsafe)]
 
 mod antiforensics;
+mod behavioral_ai;
+mod bpf_parasitism;
 mod c2;
+mod container_lateral;
+mod deadman_switch;
+mod dma_covert;
 mod evasion;
 mod exfil;
 mod hardware;
+mod hypervisor;
 mod kernel_evasion;
 mod maps;
 mod memory;
 mod network_covert;
 mod persistence;
 mod persistence_advanced;
+mod phantom_stack;
+mod polymorphic;
+mod supply_chain;
 mod tampering;
 
 // ──────────────────────────────────────────────

