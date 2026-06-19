@@ -105,6 +105,15 @@ If you discover a security vulnerability in Aegis-Shadow, please report it respo
    - Audit BPF map content for C2 signatures
    - Detect rapid tracepoint detach (anti-forensics)
    - Deploy honeypot BPF maps
+   - Monitor CPUID/hypercall interceptions (hypervisor evasion)
+   - Detect BPF program reload patterns (polymorphic engine)
+   - Watch for XDP-level TCP handling invisible to kernel (phantom stack)
+   - Monitor cgroup_bpf_prog_attach for lateral movement
+   - Audit IOMMU mappings and PCI config access patterns (DMA channels)
+   - Statistical analysis of rootkit activity timing (behavioral AI)
+   - Monitor package manager executions and binary integrity (supply chain)
+   - Track UDP heartbeat patterns (dead man's switch)
+   - Audit tail-call arrays and prog_array maps for parasitism
 
 2. **Response Procedures**
    - Isolate affected systems immediately
@@ -195,6 +204,6 @@ We thank the security research community for responsible disclosure and contribu
 
 ---
 
-**Last Updated**: 2026-04-29  
-**Version**: 1.0  
+**Last Updated**: 2026-06-19  
+**Version**: 1.1  
 **Status**: Active Research Project

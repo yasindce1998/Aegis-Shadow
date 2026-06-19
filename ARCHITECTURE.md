@@ -133,7 +133,7 @@ The project uses a custom `xtask` build system:
 - **Architecture**: x86_64
 - **Dependencies**: libbpf, clang, llvm
 
-## Offensive Features (23 Total)
+## Offensive Features (47+ Total, 9 Advanced Modules)
 
 | # | Feature | Hook Point | Description |
 |---|---|---|---|
@@ -160,6 +160,48 @@ The project uses a custom `xtask` build system:
 | 21 | Socket Cloning | kprobe: `tcp_sendmsg` | Shadows data on target connections |
 | 22 | Credential Relay | user-space | Relays captured credentials over C2 |
 | 23 | Container Escape Probes | kprobe: `unshare` + `commit_creds` | Detects container context and privilege escalation |
+
+### Advanced Modules (F48-F75)
+
+| # | Feature | Hook Point | Description |
+|---|---|---|---|
+| **Hypervisor Evasion** ||||
+| 48 | Hypervisor Detection | kprobe: `kvm_emulate_cpuid` | CPUID-based hypervisor presence detection |
+| 49 | Hypervisor Fingerprinting | kprobe: `kvm_hypercall` | Identify KVM/Xen/VMware/HyperV via hypercall patterns |
+| 50 | Hypervisor Blind-Spot | kprobe: `exc_nmi` | Exploit NMI-based inspection gaps for covert action |
+| 51 | Live Migration Detection | kprobe: `tsc_khz_changed` | Detect TSC rebase indicating VM live migration |
+| **Polymorphic Engine** ||||
+| 52 | Metamorphic Engine | kprobe: `bpf_prog_load` | Self-rewriting bytecode with rotating NOP-sled patterns |
+| 53 | Pattern Rotation | kprobe: `__schedule` | Rotate instruction patterns via tail-call variant selection |
+| 54 | Opaque Predicates | kprobe: `bpf_check` | Insert always-true runtime conditions to defeat static analysis |
+| **Phantom Network Stack** ||||
+| 55 | Phantom TCP Ingress | XDP on interface | Invisible SYN-ACK handling below kernel TCP stack |
+| 56 | Phantom Connection State | kprobe: `tcp_rcv_state_process` | Full stateful phantom TCP connection tracking |
+| 57 | Phantom Data Transfer | TC egress classifier | Inject/extract data via phantom connections |
+| **Cross-Container Lateral Movement** ||||
+| 58 | Cgroup BPF Injection | kprobe: `cgroup_bpf_prog_attach` | Inject eBPF programs into target container cgroups |
+| 59 | Namespace Traversal | kprobe: `switch_task_namespaces` | Cross-container movement via namespace transitions |
+| 60 | Namespace Escape | kprobe: `commit_creds` | Detect/exploit credential changes for container breakout |
+| **DMA Covert Channels** ||||
+| 61 | IOMMU Data Stashing | kprobe: `iommu_map` | Hide data in unused IOMMU page table entries |
+| 62 | PCIe TLP Signaling | kprobe: `pci_read_config_dword` | Encode data in PCI config read patterns |
+| 63 | NIC Firmware Exfil | kprobe: `ndo_start_xmit` | Inject exfil data in ethernet frame padding bytes |
+| **Behavioral AI Camouflage** ||||
+| 64 | Syscall Profiling | tracepoint: `raw_syscalls/sys_enter` | Build statistical baseline of system behavior |
+| 65 | Activity Throttling | kprobe: `__schedule` | Throttle rootkit actions to avoid statistical anomalies |
+| 66 | Norm Avoidance | kprobe: `__schedule` | Break timing patterns with randomized delays |
+| **Supply Chain Persistence** ||||
+| 67 | Package Manager Hook | kprobe: `do_execveat_common` | Monitor apt/yum/pip/npm/cargo executions |
+| 68 | Binary Patching | kprobe: `vfs_read` | Modify binaries in-flight during package install |
+| 69 | Integrity Bypass | kprobe: `security_file_open` | Override verification checks via bpf_override_return |
+| **Dead Man's Switch** ||||
+| 70 | Heartbeat Monitor | kprobe: `udp_rcv` | Monitor UDP heartbeat packets with magic marker |
+| 71 | Dead Man's Arming | kprobe: `hrtimer_interrupt` | Periodic check for heartbeat timeout |
+| 72 | Scorched Earth | kprobe: `vfs_unlink` | Evidence wipe triggered on heartbeat failure |
+| **BPF Parasitism** ||||
+| 73 | BPF Program Scanner | tracepoint: `syscalls/sys_enter_bpf` | Detect Falco/Tetragon/Cilium/Datadog programs |
+| 74 | Tail-Call Injection | kprobe: `bpf_prog_array_copy` | Inject into target program's tail-call array |
+| 75 | Prog Array Hijack | kprobe: `bpf_map_update_elem` | Replace security tool program FDs in prog arrays |
 
 ### C2 Protocol
 

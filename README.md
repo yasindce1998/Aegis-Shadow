@@ -16,10 +16,13 @@
 Aegis-Shadow is an educational research project that demonstrates both offensive and
 defensive uses of Linux eBPF technology. It consists of two modules:
 
-- **Shadow** (Offense): An eBPF-based rootkit with 23 features spanning process hiding,
+- **Shadow** (Offense): An eBPF-based rootkit with 47+ features spanning process hiding,
   XDP-based C2 with ChaCha20 encryption and HMAC authentication, file obfuscation,
   credential harvesting, DNS exfiltration, ICMP covert channels, network namespace hiding,
-  eBPF program cloaking, container escape probes, and anti-forensics bytecode wiping.
+  eBPF program cloaking, container escape probes, anti-forensics bytecode wiping, plus
+  9 advanced modules: hypervisor evasion, polymorphic engine, phantom network stack,
+  cross-container lateral movement, DMA covert channels, behavioral AI camouflage,
+  supply chain persistence, dead man's switch, and BPF parasitism.
 - **Aegis** (Defense): A runtime detection engine with 14 eBPF-based detection modules
   plus intelligent user-space analysis including anomaly scoring, attack chain
   correlation, calibration-based baselines, auto-detach of malicious programs,
@@ -50,7 +53,7 @@ bash verify-env.sh
 # 2. Build everything
 make build
 
-# 3. Start offensive rootkit (loads all 23 features)
+# 3. Start offensive rootkit (loads core features)
 sudo ./target/release/offense --iface eth0 --hide-pid 1234
 
 # 4. Run defense detection (in another terminal)
@@ -67,7 +70,7 @@ sudo pkill defense
 | Directory | Purpose |
 |---|---|
 | `common/` | Shared data structures and constants (`#![no_std]`) |
-| `offense-ebpf/` | Kernel-space rootkit eBPF programs (23 features) |
+| `offense-ebpf/` | Kernel-space rootkit eBPF programs (47+ features) |
 | `offense/` | User-space rootkit loader and CLI |
 | `defense-ebpf/` | Kernel-space defensive eBPF probes (11 detectors) |
 | `defense/` | User-space detection engine and CLI |
@@ -117,6 +120,15 @@ sudo ./target/release/offense \
 | `--enable-socket-clone` | Enable socket cloning / connection shadowing |
 | `--enable-cred-relay` | Enable credential relay over C2 |
 | `--enable-container-probe` | Enable container escape probes |
+| `--enable-hypervisor-evasion` | Enable hypervisor detection and evasion (CPUID, hypercall, TSC) |
+| `--enable-polymorphic` | Enable polymorphic engine (bytecode morphing, pattern rotation) |
+| `--enable-phantom-stack` | Enable phantom network stack (invisible TCP connections) |
+| `--enable-container-lateral` | Enable cross-container lateral movement via cgroup/namespace abuse |
+| `--enable-dma-covert` | Enable DMA covert channel (IOMMU, PCIe TLP, NIC exfil) |
+| `--enable-behavioral-ai` | Enable behavioral AI camouflage (syscall profiling, activity throttling) |
+| `--enable-supply-chain` | Enable supply chain persistence (package manager hooking, binary patching) |
+| `--enable-deadman-switch` | Enable dead man's switch (heartbeat monitor, scorched earth wipe) |
+| `--enable-bpf-parasitism` | Enable BPF parasitism (prog scanning, tail-call injection, array hijack) |
 
 ### Defense (Detection Engine)
 
