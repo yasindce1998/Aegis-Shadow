@@ -127,6 +127,12 @@ pub struct DeviationScorer {
     max_history: usize,
 }
 
+impl Default for DeviationScorer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeviationScorer {
     pub fn new() -> Self {
         Self {
@@ -194,6 +200,12 @@ pub struct SignatureGenerator {
     signatures: Vec<BytecodeSignature>,
     observed_programs: Vec<Vec<u8>>,
     max_programs: usize,
+}
+
+impl Default for SignatureGenerator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SignatureGenerator {
@@ -273,6 +285,12 @@ pub struct AdversarialMLEngine {
     calibrated: bool,
 }
 
+impl Default for AdversarialMLEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AdversarialMLEngine {
     pub fn new() -> Self {
         Self {
@@ -293,10 +311,8 @@ impl AdversarialMLEngine {
             seq.remove(0);
         }
 
-        if !self.calibrated {
-            if seq.len() == self.max_sequence_len {
-                self.calibration_sequences.push(seq.clone());
-            }
+        if !self.calibrated && seq.len() == self.max_sequence_len {
+            self.calibration_sequences.push(seq.clone());
         }
     }
 
@@ -304,7 +320,7 @@ impl AdversarialMLEngine {
         let sequences: Vec<Vec<u32>> = self
             .pid_sequences
             .values()
-            .filter(|s| s.len() >= DEFAULT_NGRAM_SIZE + 1)
+            .filter(|s| s.len() > DEFAULT_NGRAM_SIZE)
             .cloned()
             .chain(self.calibration_sequences.drain(..))
             .collect();
