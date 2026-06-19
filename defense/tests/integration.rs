@@ -113,7 +113,7 @@ fn test_format_latency_alert_details() {
 
 #[test]
 fn test_format_bytecode_tamper_details() {
-    let mut alert = make_defense_alert(ALERT_BYTECODE_TAMPER, 4, 100, 42, 0);
+    let mut alert = make_defense_alert(ALERT_BYTECODE_TAMPER, 4, 100, 0, 42);
     alert.details[..8].copy_from_slice(&0xDEADu64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "prog_id=42, checksum_delta=57005");
@@ -121,7 +121,7 @@ fn test_format_bytecode_tamper_details() {
 
 #[test]
 fn test_format_hidden_process_details() {
-    let mut alert = make_defense_alert(ALERT_HIDDEN_PROCESS, 4, 100, 1337, 0);
+    let mut alert = make_defense_alert(ALERT_HIDDEN_PROCESS, 4, 100, 0, 1337);
     alert.details[..8].copy_from_slice(&1u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "hidden_pid=1337, parent=1");
@@ -129,7 +129,7 @@ fn test_format_hidden_process_details() {
 
 #[test]
 fn test_format_suspicious_hook_details() {
-    let mut alert = make_defense_alert(ALERT_SUSPICIOUS_HOOK, 3, 100, 0xFFFF0000, 0);
+    let mut alert = make_defense_alert(ALERT_SUSPICIOUS_HOOK, 3, 100, 0, 0xFFFF0000);
     alert.details[..8].copy_from_slice(&99u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "hook_addr=0xffff0000, target=99");
@@ -137,7 +137,7 @@ fn test_format_suspicious_hook_details() {
 
 #[test]
 fn test_format_prog_inventory_details() {
-    let mut alert = make_defense_alert(ALERT_PROG_INVENTORY, 2, 100, 15, 0);
+    let mut alert = make_defense_alert(ALERT_PROG_INVENTORY, 2, 100, 0, 15);
     alert.details[..8].copy_from_slice(&10u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "prog_count=15, expected=10");
@@ -145,7 +145,7 @@ fn test_format_prog_inventory_details() {
 
 #[test]
 fn test_format_syscall_anomaly_details() {
-    let mut alert = make_defense_alert(ALERT_SYSCALL_ANOMALY, 3, 100, 59, 0);
+    let mut alert = make_defense_alert(ALERT_SYSCALL_ANOMALY, 3, 100, 0, 59);
     alert.details[..8].copy_from_slice(&300u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "syscall=59, deviation=300");
@@ -153,7 +153,7 @@ fn test_format_syscall_anomaly_details() {
 
 #[test]
 fn test_format_net_baseline_details() {
-    let mut alert = make_defense_alert(ALERT_NET_BASELINE, 2, 100, 1048576, 0);
+    let mut alert = make_defense_alert(ALERT_NET_BASELINE, 2, 100, 0, 1048576);
     alert.details[..8].copy_from_slice(&524288u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "bytes=1048576, threshold=524288");
@@ -161,7 +161,7 @@ fn test_format_net_baseline_details() {
 
 #[test]
 fn test_format_memfd_exec_details() {
-    let mut alert = make_defense_alert(ALERT_MEMFD_EXEC, 4, 100, 7, 0);
+    let mut alert = make_defense_alert(ALERT_MEMFD_EXEC, 4, 100, 0, 7);
     alert.details[..8].copy_from_slice(&500u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "fd=7, pid=500");
@@ -169,7 +169,7 @@ fn test_format_memfd_exec_details() {
 
 #[test]
 fn test_format_map_audit_details() {
-    let mut alert = make_defense_alert(ALERT_MAP_AUDIT, 3, 100, 3, 0);
+    let mut alert = make_defense_alert(ALERT_MAP_AUDIT, 3, 100, 0, 3);
     alert.details[..8].copy_from_slice(&2u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "map_id=3, violations=2");
@@ -177,7 +177,7 @@ fn test_format_map_audit_details() {
 
 #[test]
 fn test_format_tracepoint_gap_details() {
-    let mut alert = make_defense_alert(ALERT_TRACEPOINT_GAP, 3, 100, 500, 0);
+    let mut alert = make_defense_alert(ALERT_TRACEPOINT_GAP, 3, 100, 0, 500);
     alert.details[..8].copy_from_slice(&100u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "gap_ms=500, expected_interval=100");
@@ -185,7 +185,7 @@ fn test_format_tracepoint_gap_details() {
 
 #[test]
 fn test_format_auto_detach_details() {
-    let mut alert = make_defense_alert(ALERT_AUTO_DETACH, 4, 100, 42, 0);
+    let mut alert = make_defense_alert(ALERT_AUTO_DETACH, 4, 100, 0, 42);
     alert.details[..8].copy_from_slice(&1u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "prog_id=42, attach_type=1");
@@ -193,7 +193,7 @@ fn test_format_auto_detach_details() {
 
 #[test]
 fn test_format_containment_details() {
-    let mut alert = make_defense_alert(ALERT_CONTAINMENT, 4, 100, 1337, 0);
+    let mut alert = make_defense_alert(ALERT_CONTAINMENT, 4, 100, 0, 1337);
     alert.details[..8].copy_from_slice(&2u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "target_pid=1337, action=2");
@@ -201,7 +201,7 @@ fn test_format_containment_details() {
 
 #[test]
 fn test_format_honeypot_read_details() {
-    let mut alert = make_defense_alert(ALERT_HONEYPOT_READ, 3, 100, 5, 0);
+    let mut alert = make_defense_alert(ALERT_HONEYPOT_READ, 3, 100, 0, 5);
     alert.details[..8].copy_from_slice(&999u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "map_id=5, accessor_pid=999");
@@ -209,7 +209,7 @@ fn test_format_honeypot_read_details() {
 
 #[test]
 fn test_format_cross_reference_details() {
-    let mut alert = make_defense_alert(ALERT_CROSS_REFERENCE, 3, 100, 7, 0);
+    let mut alert = make_defense_alert(ALERT_CROSS_REFERENCE, 3, 100, 0, 7);
     alert.details[..8].copy_from_slice(&3u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "discrepancy=7, source_a=3");
@@ -217,7 +217,7 @@ fn test_format_cross_reference_details() {
 
 #[test]
 fn test_format_hw_perf_counter_details() {
-    let mut alert = make_defense_alert(ALERT_HW_PERF_COUNTER, 2, 100, 4, 0);
+    let mut alert = make_defense_alert(ALERT_HW_PERF_COUNTER, 2, 100, 0, 4);
     alert.details[..8].copy_from_slice(&150u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "counter=4, deviation=150");
@@ -225,7 +225,7 @@ fn test_format_hw_perf_counter_details() {
 
 #[test]
 fn test_format_verifier_analysis_details() {
-    let mut alert = make_defense_alert(ALERT_VERIFIER_ANALYSIS, 3, 100, 88, 0);
+    let mut alert = make_defense_alert(ALERT_VERIFIER_ANALYSIS, 3, 100, 0, 88);
     alert.details[..8].copy_from_slice(&1024u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "prog_id=88, complexity=1024");
@@ -233,7 +233,7 @@ fn test_format_verifier_analysis_details() {
 
 #[test]
 fn test_format_memory_forensics_details() {
-    let mut alert = make_defense_alert(ALERT_MEMORY_FORENSICS, 4, 100, 0xFFFF8000, 0);
+    let mut alert = make_defense_alert(ALERT_MEMORY_FORENSICS, 4, 100, 0, 0xFFFF8000);
     alert.details[..8].copy_from_slice(&42u64.to_le_bytes());
     let details = format_alert_details(&alert);
     assert_eq!(details, "region=0xffff8000, checksum_delta=42");
@@ -241,7 +241,7 @@ fn test_format_memory_forensics_details() {
 
 #[test]
 fn test_format_unknown_alert_fallback() {
-    let alert = make_defense_alert(999, 2, 100, 12345, 0);
+    let alert = make_defense_alert(999, 2, 100, 0, 12345);
     let details = format_alert_details(&alert);
     assert_eq!(details, "context=12345");
 }

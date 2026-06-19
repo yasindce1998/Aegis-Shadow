@@ -84,10 +84,7 @@ fn try_raw_c2(ctx: &XdpContext) -> Result<u32, i64> {
 
 #[classifier]
 pub fn shadow_tc_inject(ctx: TcContext) -> i32 {
-    match try_tc_inject(&ctx) {
-        Ok(action) => action,
-        Err(_) => 0, // TC_ACT_OK
-    }
+    try_tc_inject(&ctx).unwrap_or_default()
 }
 
 fn try_tc_inject(ctx: &TcContext) -> Result<i32, i64> {
@@ -158,10 +155,7 @@ fn try_doh_c2(ctx: &ProbeContext) -> Result<u32, i64> {
 
 #[classifier]
 pub fn shadow_traffic_shape(ctx: TcContext) -> i32 {
-    match try_traffic_shape(&ctx) {
-        Ok(action) => action,
-        Err(_) => 0, // TC_ACT_OK
-    }
+    try_traffic_shape(&ctx).unwrap_or_default()
 }
 
 fn try_traffic_shape(ctx: &TcContext) -> Result<i32, i64> {
@@ -171,7 +165,7 @@ fn try_traffic_shape(ctx: &TcContext) -> Result<i32, i64> {
         }
     }
 
-    let pkt_len = ctx.len() as u32;
+    let pkt_len = ctx.len();
 
     if let Some(profile) = unsafe { TRAFFIC_PROFILE_MAP.get_ptr_mut(0) } {
         let p = unsafe { &mut *profile };

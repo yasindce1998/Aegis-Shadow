@@ -139,16 +139,14 @@ fn try_nmi_handler(ctx: &ProbeContext) -> Result<u32, i64> {
 
     let vector: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
 
-    if vector == 2 {
-        if unsafe { HV_BLIND_ADDRS.get(&vector) }.is_some() {
-            let event = EventHeader {
-                event_type: EVENT_HYPERVISOR_BLINDSPOT,
-                pid,
-                timestamp_ns: unsafe { bpf_ktime_get_ns() },
-                context: vector,
-            };
-            let _ = EVENTS.output(&event, 0);
-        }
+    if vector == 2 && unsafe { HV_BLIND_ADDRS.get(&vector) }.is_some() {
+        let event = EventHeader {
+            event_type: EVENT_HYPERVISOR_BLINDSPOT,
+            pid,
+            timestamp_ns: unsafe { bpf_ktime_get_ns() },
+            context: vector,
+        };
+        let _ = EVENTS.output(&event, 0);
     }
 
     Ok(0)
