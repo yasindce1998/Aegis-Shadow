@@ -136,6 +136,41 @@ pub const EVENT_SOCKET_CLONED: u32 = 22;
 pub const EVENT_CRED_RELAYED: u32 = 23;
 pub const EVENT_CONTAINER_PROBE: u32 = 24;
 
+// Kernel evasion events
+pub const EVENT_KPROBE_DETECTED: u32 = 25;
+pub const EVENT_TAIL_CALL_CHAIN: u32 = 26;
+pub const EVENT_FTRACE_BLINDED: u32 = 27;
+pub const EVENT_BPF_ITER_ABUSED: u32 = 28;
+
+// Memory & process events
+pub const EVENT_VDSO_HOOKED: u32 = 29;
+pub const EVENT_SHM_COVERT_MSG: u32 = 30;
+pub const EVENT_UFFD_INJECTION: u32 = 31;
+pub const EVENT_COREDUMP_SUPPRESSED: u32 = 32;
+
+// Network covert events
+pub const EVENT_ISN_COVERT: u32 = 33;
+pub const EVENT_IPV6_EXT_ABUSE: u32 = 34;
+pub const EVENT_ARP_POISONED: u32 = 35;
+pub const EVENT_PORT_KNOCK_AUTH: u32 = 36;
+pub const EVENT_BGP_HIJACK: u32 = 37;
+
+// Hardware events
+pub const EVENT_DR_BREAKPOINT: u32 = 38;
+pub const EVENT_PMC_COVERT: u32 = 39;
+pub const EVENT_TSC_SIDECHAN: u32 = 40;
+
+// Anti-forensics events
+pub const EVENT_AUDIT_KILLED: u32 = 41;
+pub const EVENT_INODE_SLACK_HIDE: u32 = 42;
+pub const EVENT_JOURNAL_MANIPULATED: u32 = 43;
+pub const EVENT_PROC_DEEP_SPOOF: u32 = 44;
+
+// Advanced persistence events
+pub const EVENT_INITRAMFS_IMPLANT: u32 = 45;
+pub const EVENT_MODSIGN_BYPASS: u32 = 46;
+pub const EVENT_BPF_LINK_PINNED: u32 = 47;
+
 // Defense event types (100+)
 pub const EVENT_GHOST_MAP_FOUND: u32 = 100;
 pub const EVENT_LATENCY_ANOMALY: u32 = 101;
@@ -339,6 +374,58 @@ pub struct HoneypotAccess {
     pub timestamp_ns: u64,
 }
 
+/// Port knock sequence state per client IP.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PortKnockState {
+    pub src_ip: u32,
+    pub current_step: u32,
+    pub last_knock_ns: u64,
+}
+
+/// Port knock daemon configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PortKnockConfig {
+    pub sequence: [u16; 8],
+    pub seq_len: u8,
+    pub _pad1: u8,
+    pub protected_port: u16,
+    pub timeout_ns: u64,
+    pub _pad2: [u8; 4],
+}
+
+/// BGP hijack prefix announcement entry.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct BgpHijackEntry {
+    pub prefix: u32,
+    pub mask_len: u8,
+    pub _pad: [u8; 3],
+    pub next_hop: u32,
+    pub fake_asn: u32,
+}
+
+/// Inode slack-space hiding entry.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SlackHideEntry {
+    pub real_size: u64,
+    pub hidden_data_len: u32,
+    pub _pad: u32,
+}
+
+/// /proc deep spoofing entry per PID.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ProcSpoofEntry {
+    pub fake_uid: u32,
+    pub fake_ppid: u32,
+    pub fake_comm: [u8; 16],
+    pub fake_state: u8,
+    pub _pad: [u8; 7],
+}
+
 // ──────────────────────────────────────────────
 // Safety: All structs above are plain-old-data (POD) types.
 // They contain no pointers, no references, and no Drop impls.
@@ -395,3 +482,18 @@ unsafe impl aya::Pod for ProgInventoryEntry {}
 
 #[cfg(feature = "user")]
 unsafe impl aya::Pod for HoneypotAccess {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PortKnockState {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for PortKnockConfig {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for BgpHijackEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for SlackHideEntry {}
+
+#[cfg(feature = "user")]
+unsafe impl aya::Pod for ProcSpoofEntry {}

