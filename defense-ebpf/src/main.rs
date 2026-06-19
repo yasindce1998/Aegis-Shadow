@@ -973,9 +973,9 @@ fn try_detect_hw_perf(_ctx: &ProbeContext) -> Result<u32, i64> {
 // Hook: tracepoint/syscalls/sys_enter_bpf (BPF_PROG_LOAD)
 // ──────────────────────────────────────────────
 
-const DANGEROUS_HELPER_OVERRIDE_RETURN: u32 = 58;
-const DANGEROUS_HELPER_PROBE_WRITE: u32 = 36;
-const DANGEROUS_HELPER_PROBE_READ_KERNEL: u32 = 113;
+const _DANGEROUS_HELPER_OVERRIDE_RETURN: u32 = 58;
+const _DANGEROUS_HELPER_PROBE_WRITE: u32 = 36;
+const _DANGEROUS_HELPER_PROBE_READ_KERNEL: u32 = 113;
 
 #[tracepoint]
 pub fn detect_verifier_suspicious(ctx: TracePointContext) -> u32 {

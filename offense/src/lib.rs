@@ -31,6 +31,7 @@ use common::{
     EVENT_CONTAINER_LATERAL,
     EVENT_CONTAINER_PROBE,
     EVENT_COREDUMP_SUPPRESSED,
+    EVENT_CRED_CAPTURED,
     EVENT_CRED_RELAYED,
     EVENT_DEADMAN_ARMED,
     // DMA covert channel events (61-63)
@@ -60,6 +61,7 @@ use common::{
     EVENT_ISN_COVERT,
     EVENT_JOURNAL_MANIPULATED,
     EVENT_KALLSYMS_HIDDEN,
+    EVENT_KILL_SWITCH,
     // Kernel evasion events (25-28)
     EVENT_KPROBE_DETECTED,
     EVENT_LIVEPATCH_ABUSED,
@@ -80,6 +82,7 @@ use common::{
     EVENT_PACKET_INTERCEPTED,
     EVENT_PATTERN_ROTATED,
     EVENT_PCIE_TLP_SIGNAL,
+    EVENT_PERSISTENCE_SET,
     EVENT_PHANTOM_CONN_ESTABLISHED,
     EVENT_PHANTOM_DATA_XFER,
     // Phantom network stack events (55-57)
@@ -117,6 +120,9 @@ pub enum EventClassification {
     ProcessHidden { pid: u32 },
     PacketIntercepted { cmd_type: u32, arg: u64 },
     FileObfuscated { pid: u32, inode: u64 },
+    PersistenceSet { pid: u32, key: u64 },
+    KillSwitch { pid: u32, target: u64 },
+    CredCaptured { pid: u32, cred_type: u64 },
     LogTampered { pid: u32, bytes: u64 },
     AncestrySpoofed { pid: u32, fake_ppid: u64 },
     DnsExfil { seq: u64 },
@@ -231,6 +237,18 @@ pub fn classify_event(event: &EventHeader) -> EventClassification {
         EVENT_FILE_OBFUSCATED => EventClassification::FileObfuscated {
             pid: event.pid,
             inode: event.context,
+        },
+        EVENT_PERSISTENCE_SET => EventClassification::PersistenceSet {
+            pid: event.pid,
+            key: event.context,
+        },
+        EVENT_KILL_SWITCH => EventClassification::KillSwitch {
+            pid: event.pid,
+            target: event.context,
+        },
+        EVENT_CRED_CAPTURED => EventClassification::CredCaptured {
+            pid: event.pid,
+            cred_type: event.context,
         },
         EVENT_LOG_TAMPERED => EventClassification::LogTampered {
             pid: event.pid,
