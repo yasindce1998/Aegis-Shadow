@@ -4,8 +4,8 @@ use aya_ebpf::{
     programs::{ProbeContext, RetProbeContext},
 };
 use common::{
-    EventHeader, TaskPatchRecord, EVENT_FTRACE_SELF_HIDDEN, EVENT_IDT_HOOKED,
-    EVENT_LIVEPATCH_ABUSED, EVENT_LSM_HOOK_SUBVERTED, EVENT_TASK_STRUCT_PATCHED,
+    EventHeader, EVENT_FTRACE_SELF_HIDDEN, EVENT_IDT_HOOKED, EVENT_LIVEPATCH_ABUSED,
+    EVENT_LSM_HOOK_SUBVERTED, EVENT_TASK_STRUCT_PATCHED,
 };
 
 use crate::maps::*;
@@ -19,7 +19,7 @@ pub fn shadow_task_patch(ctx: ProbeContext) -> u32 {
     try_task_patch(&ctx).unwrap_or_default()
 }
 
-fn try_task_patch(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_task_patch(_ctx: &ProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);

@@ -74,7 +74,7 @@ pub fn shadow_pattern_rotate(ctx: ProbeContext) -> u32 {
     try_pattern_rotate(&ctx).unwrap_or_default()
 }
 
-fn try_pattern_rotate(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_pattern_rotate(_ctx: &ProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);

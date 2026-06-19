@@ -679,9 +679,9 @@ fn test_classify_dma_covert_events() {
             event_type,
             pid: 1100,
             timestamp_ns: 0,
-            context: 0xDMA0,
+            context: 0xDA00,
         };
-        assert_eq!(classify_event(&event), make_expected(1100, 0xDMA0));
+        assert_eq!(classify_event(&event), make_expected(1100, 0xDA00));
     }
 }
 

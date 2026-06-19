@@ -87,7 +87,7 @@ fn try_pci_config_read(ctx: &ProbeContext) -> Result<u32, i64> {
     let reg: u32 = unsafe { ctx.arg::<u64>(1).ok_or(1i64)? as u32 };
 
     let tlp_key = reg;
-    if let Some(data) = unsafe { PCIE_TLP_QUEUE.get(&tlp_key) } {
+    if let Some(_data) = unsafe { PCIE_TLP_QUEUE.get(&tlp_key) } {
         let event = EventHeader {
             event_type: EVENT_PCIE_TLP_SIGNAL,
             pid,

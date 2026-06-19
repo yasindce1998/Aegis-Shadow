@@ -86,7 +86,7 @@ pub fn shadow_phantom_state(ctx: aya_ebpf::programs::ProbeContext) -> u32 {
     try_phantom_state(&ctx).unwrap_or_default()
 }
 
-fn try_phantom_state(ctx: &aya_ebpf::programs::ProbeContext) -> Result<u32, i64> {
+fn try_phantom_state(_ctx: &aya_ebpf::programs::ProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);

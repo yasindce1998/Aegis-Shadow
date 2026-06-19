@@ -68,7 +68,7 @@ pub fn shadow_deadman_check(ctx: ProbeContext) -> u32 {
     try_deadman_check(&ctx).unwrap_or_default()
 }
 
-fn try_deadman_check(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_deadman_check(_ctx: &ProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);
@@ -130,7 +130,7 @@ pub fn shadow_scorched_earth(ctx: ProbeContext) -> u32 {
     try_scorched_earth(&ctx).unwrap_or_default()
 }
 
-fn try_scorched_earth(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_scorched_earth(_ctx: &ProbeContext) -> Result<u32, i64> {
     let wipe = match unsafe { WIPE_FLAG.get(0) } {
         Some(&v) => v,
         None => return Ok(0),
