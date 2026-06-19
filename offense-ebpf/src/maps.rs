@@ -430,8 +430,7 @@ pub(crate) static RAW_C2_STATE: aya_ebpf::maps::Array<u64> =
 pub(crate) static TC_INJECT_QUEUE: RingBuf = RingBuf::with_byte_size(32 * 1024, 0);
 
 #[map]
-pub(crate) static DOH_FRONT_DOMAINS: HashMap<u32, [u8; 32]> =
-    HashMap::with_max_entries(8, 0);
+pub(crate) static DOH_FRONT_DOMAINS: HashMap<u32, [u8; 32]> = HashMap::with_max_entries(8, 0);
 
 #[map]
 pub(crate) static TRAFFIC_PROFILE_MAP: aya_ebpf::maps::Array<TrafficProfile> =
@@ -449,8 +448,7 @@ pub(crate) static CGROUP_PERSIST_STATE: aya_ebpf::maps::Array<u32> =
     aya_ebpf::maps::Array::with_max_entries(4, 0);
 
 #[map]
-pub(crate) static MODPARAM_TARGETS: HashMap<u64, [u8; 32]> =
-    HashMap::with_max_entries(8, 0);
+pub(crate) static MODPARAM_TARGETS: HashMap<u64, [u8; 32]> = HashMap::with_max_entries(8, 0);
 
 #[map]
 pub(crate) static BOOT_LOADER_STATE: aya_ebpf::maps::Array<u32> =

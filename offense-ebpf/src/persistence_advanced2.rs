@@ -36,7 +36,7 @@ fn try_obfuscated_pin(ctx: &ProbeContext) -> Result<u32, i64> {
         }
     }
 
-    let prog_id: u32 = unsafe { ctx.arg(0).ok_or(1i64)? } as u32;
+    let prog_id: u32 = unsafe { ctx.arg::<u32>(0).ok_or(1i64)? };
 
     if unsafe { PIN_PATH_TABLE.get(&prog_id) }.is_some() {
         let event = EventHeader {

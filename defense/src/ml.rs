@@ -177,7 +177,9 @@ impl BytecodeSignature {
             return false;
         }
         for window in bytecode.windows(self.opcode_sequence.len()) {
-            let matched = window.iter().zip(self.opcode_sequence.iter().zip(self.mask.iter()))
+            let matched = window
+                .iter()
+                .zip(self.opcode_sequence.iter().zip(self.mask.iter()))
                 .all(|(b, (sig, m))| (b & m) == (sig & m));
             if matched {
                 return true;
@@ -218,10 +220,7 @@ impl SignatureGenerator {
         let mut opcode_sequences: HashMap<Vec<u8>, u32> = HashMap::new();
 
         for program in &self.observed_programs {
-            let opcodes: Vec<u8> = program
-                .chunks(8)
-                .map(|chunk| chunk[0])
-                .collect();
+            let opcodes: Vec<u8> = program.chunks(8).map(|chunk| chunk[0]).collect();
 
             let sig_len = opcodes.len().min(MAX_SIGNATURE_LEN);
             for window_size in 3..=sig_len {
@@ -371,11 +370,7 @@ mod tests {
     fn test_ngram_training() {
         let mut model = SyscallSequenceModel::new(3);
         let sequences: Vec<Vec<u32>> = (0..100)
-            .map(|i| {
-                (0..50)
-                    .map(|j| ((i * 7 + j * 3) % 20) as u32)
-                    .collect()
-            })
+            .map(|i| (0..50).map(|j| ((i * 7 + j * 3) % 20) as u32).collect())
             .collect();
         model.train(&sequences);
         assert!(model.is_trained());

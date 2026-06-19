@@ -4,7 +4,11 @@ pub fn detection_predicate_ghost_map(map_id: u32, known_ids: &[u32]) -> bool {
     !known_ids.contains(&map_id)
 }
 
-pub fn detection_predicate_latency(observed_ns: u64, baseline_ns: u64, threshold_factor: u64) -> bool {
+pub fn detection_predicate_latency(
+    observed_ns: u64,
+    baseline_ns: u64,
+    threshold_factor: u64,
+) -> bool {
     observed_ns > baseline_ns.saturating_mul(threshold_factor)
 }
 
@@ -16,17 +20,11 @@ pub fn detection_predicate_hidden_process(
     bpf_tracked_count.saturating_sub(proc_pid_count) > threshold
 }
 
-pub fn detection_predicate_bytecode_tamper(
-    current_hash: u64,
-    baseline_hash: u64,
-) -> bool {
+pub fn detection_predicate_bytecode_tamper(current_hash: u64, baseline_hash: u64) -> bool {
     current_hash != baseline_hash && baseline_hash != 0
 }
 
-pub fn detection_predicate_memory_forensics(
-    current_checksum: u64,
-    baseline_checksum: u64,
-) -> bool {
+pub fn detection_predicate_memory_forensics(current_checksum: u64, baseline_checksum: u64) -> bool {
     current_checksum != baseline_checksum && baseline_checksum != 0
 }
 

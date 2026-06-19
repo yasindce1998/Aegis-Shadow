@@ -569,7 +569,9 @@ pub fn format_alert_details(alert: &DefenseAlert) -> String {
     match alert.alert_type {
         ALERT_GHOST_MAP => format!("map_id={}, suspicious_ops={}", alert.context, detail_u64),
         ALERT_SYSCALL_LATENCY => format!("syscall={}, latency={}ns", alert.context, detail_u64),
-        ALERT_BYTECODE_TAMPER => format!("prog_id={}, checksum_delta={}", alert.context, detail_u64),
+        ALERT_BYTECODE_TAMPER => {
+            format!("prog_id={}, checksum_delta={}", alert.context, detail_u64)
+        }
         ALERT_HIDDEN_PROCESS => format!("hidden_pid={}, parent={}", alert.context, detail_u64),
         ALERT_SUSPICIOUS_HOOK => format!("hook_addr=0x{:x}, target={}", alert.context, detail_u64),
         ALERT_PROG_INVENTORY => format!("prog_count={}, expected={}", alert.context, detail_u64),
@@ -577,14 +579,19 @@ pub fn format_alert_details(alert: &DefenseAlert) -> String {
         ALERT_NET_BASELINE => format!("bytes={}, threshold={}", alert.context, detail_u64),
         ALERT_MEMFD_EXEC => format!("fd={}, pid={}", alert.context, detail_u64),
         ALERT_MAP_AUDIT => format!("map_id={}, violations={}", alert.context, detail_u64),
-        ALERT_TRACEPOINT_GAP => format!("gap_ms={}, expected_interval={}", alert.context, detail_u64),
+        ALERT_TRACEPOINT_GAP => {
+            format!("gap_ms={}, expected_interval={}", alert.context, detail_u64)
+        }
         ALERT_AUTO_DETACH => format!("prog_id={}, attach_type={}", alert.context, detail_u64),
         ALERT_CONTAINMENT => format!("target_pid={}, action={}", alert.context, detail_u64),
         ALERT_HONEYPOT_READ => format!("map_id={}, accessor_pid={}", alert.context, detail_u64),
         ALERT_CROSS_REFERENCE => format!("discrepancy={}, source_a={}", alert.context, detail_u64),
         ALERT_HW_PERF_COUNTER => format!("counter={}, deviation={}", alert.context, detail_u64),
         ALERT_VERIFIER_ANALYSIS => format!("prog_id={}, complexity={}", alert.context, detail_u64),
-        ALERT_MEMORY_FORENSICS => format!("region=0x{:x}, checksum_delta={}", alert.context, detail_u64),
+        ALERT_MEMORY_FORENSICS => format!(
+            "region=0x{:x}, checksum_delta={}",
+            alert.context, detail_u64
+        ),
         _ => format!("context={}", alert.context),
     }
 }

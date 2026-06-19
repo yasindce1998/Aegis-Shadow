@@ -1,7 +1,7 @@
 use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_get_current_task, bpf_ktime_get_ns},
     macros::{kprobe, kretprobe},
-    programs::ProbeContext,
+    programs::{ProbeContext, RetProbeContext},
 };
 use common::{
     EventHeader, TaskPatchRecord, EVENT_FTRACE_SELF_HIDDEN, EVENT_IDT_HOOKED,
@@ -141,11 +141,11 @@ fn try_idt_hook(ctx: &ProbeContext) -> Result<u32, i64> {
 // ──────────────────────────────────────────────
 
 #[kretprobe]
-pub fn shadow_ftrace_hide(ctx: ProbeContext) -> u32 {
+pub fn shadow_ftrace_hide(ctx: RetProbeContext) -> u32 {
     try_ftrace_hide(&ctx).unwrap_or_default()
 }
 
-fn try_ftrace_hide(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_ftrace_hide(ctx: &RetProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);
@@ -155,7 +155,7 @@ fn try_ftrace_hide(ctx: &ProbeContext) -> Result<u32, i64> {
     let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 
-    let prog_id: u32 = unsafe { ctx.arg(0).unwrap_or(0) };
+    let prog_id: u32 = unsafe { ctx.ret().unwrap_or(0) };
 
     if unsafe { HIDDEN_PROG_IDS.get(&prog_id) }.is_some() {
         let event = EventHeader {
