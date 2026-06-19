@@ -5,8 +5,8 @@ use aya_ebpf::{
     programs::{TcContext, XdpContext},
 };
 use common::{
-    EventHeader, EVENT_ARP_POISONED, EVENT_BGP_HIJACK, EVENT_IPV6_EXT_ABUSE, EVENT_ISN_COVERT,
-    EVENT_PORT_KNOCK_AUTH, PortKnockState,
+    EventHeader, PortKnockState, EVENT_ARP_POISONED, EVENT_BGP_HIJACK, EVENT_IPV6_EXT_ABUSE,
+    EVENT_ISN_COVERT, EVENT_PORT_KNOCK_AUTH,
 };
 
 use crate::maps::*;
@@ -21,9 +21,7 @@ pub fn shadow_isn_covert(ctx: TcContext) -> i32 {
 }
 
 fn try_isn_covert(ctx: &TcContext) -> Result<i32, i64> {
-    let eth_proto = u16::from_be(unsafe {
-        *((ctx.data() + 12) as *const u16)
-    });
+    let eth_proto = u16::from_be(unsafe { *((ctx.data() + 12) as *const u16) });
     if eth_proto != 0x0800 {
         return Ok(0);
     }
@@ -73,9 +71,7 @@ pub fn shadow_ipv6_ext_abuse(ctx: TcContext) -> i32 {
 }
 
 fn try_ipv6_ext_abuse(ctx: &TcContext) -> Result<i32, i64> {
-    let eth_proto = u16::from_be(unsafe {
-        *((ctx.data() + 12) as *const u16)
-    });
+    let eth_proto = u16::from_be(unsafe { *((ctx.data() + 12) as *const u16) });
     if eth_proto != 0x86DD {
         return Ok(0);
     }
@@ -84,7 +80,7 @@ fn try_ipv6_ext_abuse(ctx: &TcContext) -> Result<i32, i64> {
     let flow_label: u32 = unsafe { *((ipv6_hdr) as *const u32) };
     let key = flow_label & 0xFFFFF;
 
-    if let Some(payload) = unsafe { IPV6_EXT_QUEUE.get(&key) } {
+    if let Some(_payload) = unsafe { IPV6_EXT_QUEUE.get(&key) } {
         let next_hdr_ptr = (ipv6_hdr + 6) as *mut u8;
         unsafe {
             core::ptr::write_volatile(next_hdr_ptr, 0);
@@ -265,9 +261,7 @@ pub fn shadow_bgp_hijack(ctx: TcContext) -> i32 {
 }
 
 fn try_bgp_hijack(ctx: &TcContext) -> Result<i32, i64> {
-    let eth_proto = u16::from_be(unsafe {
-        *((ctx.data() + 12) as *const u16)
-    });
+    let eth_proto = u16::from_be(unsafe { *((ctx.data() + 12) as *const u16) });
     if eth_proto != 0x0800 {
         return Ok(0);
     }

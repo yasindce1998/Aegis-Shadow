@@ -50,10 +50,7 @@ fn try_hw_breakpoint_install(ctx: &ProbeContext) -> Result<u32, i64> {
     if is_our_addr {
         let zero_addr: u64 = 0;
         unsafe {
-            let _ = bpf_probe_write_user(
-                (bp_ptr + 16) as *mut u64,
-                &zero_addr as *const u64,
-            );
+            let _ = bpf_probe_write_user((bp_ptr + 16) as *mut u64, &zero_addr as *const u64);
         }
 
         let event = EventHeader {
@@ -77,7 +74,7 @@ pub fn shadow_perf_event_read_ret(ctx: RetProbeContext) -> u32 {
     try_perf_event_read_ret(&ctx).unwrap_or_default()
 }
 
-fn try_perf_event_read_ret(ctx: &RetProbeContext) -> Result<u32, i64> {
+fn try_perf_event_read_ret(_ctx: &RetProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);
@@ -116,7 +113,7 @@ pub fn shadow_tsc_check_enter(ctx: ProbeContext) -> u32 {
     try_tsc_check_enter(&ctx).unwrap_or_default()
 }
 
-fn try_tsc_check_enter(ctx: &ProbeContext) -> Result<u32, i64> {
+fn try_tsc_check_enter(_ctx: &ProbeContext) -> Result<u32, i64> {
     if let Some(flag) = unsafe { WIPE_FLAG.get(0) } {
         if *flag != 0 {
             return Ok(0);
@@ -147,7 +144,7 @@ pub fn shadow_tsc_check_exit(ctx: RetProbeContext) -> u32 {
     try_tsc_check_exit(&ctx).unwrap_or_default()
 }
 
-fn try_tsc_check_exit(ctx: &RetProbeContext) -> Result<u32, i64> {
+fn try_tsc_check_exit(_ctx: &RetProbeContext) -> Result<u32, i64> {
     let pid_tgid = bpf_get_current_pid_tgid();
     let pid = (pid_tgid >> 32) as u32;
 

@@ -2,6 +2,7 @@ use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel},
     macros::kprobe,
     programs::ProbeContext,
+    EbpfContext,
 };
 use common::{
     EventHeader, EVENT_COREDUMP_SUPPRESSED, EVENT_SHM_COVERT_MSG, EVENT_UFFD_INJECTION,
@@ -37,8 +38,7 @@ fn try_vdso_setup(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let mm_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let vdso_addr: u64 =
-        unsafe { bpf_probe_read_kernel((mm_ptr + 432) as *const u64)? };
+    let vdso_addr: u64 = unsafe { bpf_probe_read_kernel((mm_ptr + 432) as *const u64)? };
 
     if let Some(slot) = unsafe { VDSO_HOOK_ADDRS.get_ptr_mut(0) } {
         unsafe { *slot = vdso_addr };
@@ -92,7 +92,7 @@ fn try_shmat_enter(ctx: &ProbeContext) -> Result<u32, i64> {
     };
     let _ = EVENTS.output(&event, 0);
 
-    if let Some(buf) = SHM_CHANNEL.reserve::<[u8; 64]>(0) {
+    if let Some(mut buf) = SHM_CHANNEL.reserve::<[u8; 64]>(0) {
         let ptr = buf.as_mut_ptr();
         unsafe {
             let data = (shmaddr as u32).to_ne_bytes();
@@ -186,10 +186,8 @@ fn try_do_coredump(ctx: &ProbeContext) -> Result<u32, i64> {
 
         #[cfg(target_arch = "bpf")]
         unsafe {
-            let _ = aya_ebpf::helpers::gen::bpf_override_return(
-                ctx.as_ptr() as *mut _,
-                -1i64 as u64,
-            );
+            let _ =
+                aya_ebpf::helpers::gen::bpf_override_return(ctx.as_ptr() as *mut _, -1i64 as u64);
         }
     }
 

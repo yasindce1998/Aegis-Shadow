@@ -2,10 +2,9 @@ use aya_ebpf::{
     helpers::{bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_probe_read_kernel},
     macros::kprobe,
     programs::ProbeContext,
+    EbpfContext,
 };
-use common::{
-    EventHeader, EVENT_BPF_LINK_PINNED, EVENT_INITRAMFS_IMPLANT, EVENT_MODSIGN_BYPASS,
-};
+use common::{EventHeader, EVENT_BPF_LINK_PINNED, EVENT_INITRAMFS_IMPLANT, EVENT_MODSIGN_BYPASS};
 
 use crate::maps::*;
 
@@ -44,8 +43,7 @@ fn try_init_module(ctx: &ProbeContext) -> Result<u32, i64> {
     }
 
     let mod_ptr: u64 = unsafe { ctx.arg(0).ok_or(1i64)? };
-    let mod_name_ptr: u64 =
-        unsafe { bpf_probe_read_kernel((mod_ptr + 24) as *const u64)? };
+    let mod_name_ptr: u64 = unsafe { bpf_probe_read_kernel((mod_ptr + 24) as *const u64)? };
     let first_byte: u8 = unsafe { bpf_probe_read_kernel(mod_name_ptr as *const u8)? };
 
     if first_byte == 0 {
@@ -142,8 +140,7 @@ fn try_bpf_obj_get(ctx: &ProbeContext) -> Result<u32, i64> {
     let attr_ptr: u64 = unsafe { ctx.arg(1).ok_or(1i64)? };
     let pathname_ptr: u64 = unsafe { bpf_probe_read_kernel(attr_ptr as *const u64)? };
 
-    let first_bytes: [u8; 4] =
-        unsafe { bpf_probe_read_kernel(pathname_ptr as *const [u8; 4])? };
+    let first_bytes: [u8; 4] = unsafe { bpf_probe_read_kernel(pathname_ptr as *const [u8; 4])? };
 
     let path_hash: u32 = u32::from_ne_bytes(first_bytes);
     if unsafe { BPF_PIN_PATHS.get(&path_hash) }.is_some() {
