@@ -1,48 +1,71 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
   <defs>
-    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="aegisGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#00ffff"/>
-      <stop offset="100%" stop-color="#bf5fff"/>
+      <stop offset="50%" stop-color="#7b2fff"/>
+      <stop offset="100%" stop-color="#ff00ff"/>
     </linearGradient>
-    <linearGradient id="innerGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff00ff" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#00ffff" stop-opacity="0.6"/>
+    <linearGradient id="shadowGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#bf5fff" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#ff00ff" stop-opacity="0.2"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feGaussianBlur stdDeviation="2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-    <filter id="innerGlow">
-      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
+    <clipPath id="leftHalf">
+      <rect x="0" y="0" width="60" height="120"/>
+    </clipPath>
+    <clipPath id="rightHalf">
+      <rect x="60" y="0" width="60" height="120"/>
+    </clipPath>
   </defs>
 
-  <!-- Outer shield -->
-  <g filter="url(#glow)">
-    <path d="M 60 10 L 20 28 L 20 60 C 20 85 38 102 60 110 C 82 102 100 85 100 60 L 100 28 Z"
-          fill="none" stroke="url(#shieldGrad)" stroke-width="2.5"/>
+  <!-- Shield outline - solid left (Aegis/defense) -->
+  <g filter="url(#glow)" clip-path="url(#leftHalf)">
+    <path d="M 60 12 L 18 32 L 18 62 C 18 90 37 106 60 114 C 83 106 102 90 102 62 L 102 32 Z"
+          fill="none" stroke="#00ffff" stroke-width="2.5"/>
   </g>
 
-  <!-- Inner dashed shield - the shadow -->
-  <g filter="url(#innerGlow)">
-    <path d="M 60 28 L 38 38 L 38 60 C 38 76 48 86 60 91 C 72 86 82 76 82 60 L 82 38 Z"
-          fill="none" stroke="url(#innerGrad)" stroke-width="1.5" stroke-dasharray="4,5"/>
+  <!-- Shield outline - fragmented right (Shadow/offense) -->
+  <g filter="url(#glow)" clip-path="url(#rightHalf)">
+    <path d="M 60 12 L 18 32 L 18 62 C 18 90 37 106 60 114 C 83 106 102 90 102 62 L 102 32 Z"
+          fill="none" stroke="#bf5fff" stroke-width="2.5" stroke-dasharray="8,4,2,4"/>
   </g>
 
-  <!-- Central eye -->
-  <circle cx="60" cy="58" r="7" fill="none" stroke="#00ffff" stroke-width="1.5" filter="url(#innerGlow)"/>
-  <circle cx="60" cy="58" r="2.5" fill="#bf5fff" filter="url(#innerGlow)"/>
+  <!-- Inner shadow silhouette - offset shield -->
+  <path d="M 64 30 L 40 42 L 40 62 C 40 80 50 90 64 96 C 78 90 88 80 88 62 L 88 42 Z"
+        fill="url(#shadowGrad)" opacity="0.15" filter="url(#softGlow)"/>
 
-  <!-- Radiating probe lines -->
-  <line x1="60" y1="49" x2="60" y2="35" stroke="#00ffff" stroke-width="1" opacity="0.5"/>
-  <line x1="67" y1="63" x2="77" y2="75" stroke="#bf5fff" stroke-width="1" opacity="0.5"/>
-  <line x1="53" y1="63" x2="43" y2="75" stroke="#ff00ff" stroke-width="1" opacity="0.4"/>
+  <!-- Central divide line -->
+  <line x1="60" y1="24" x2="60" y2="105" stroke="url(#aegisGrad)" stroke-width="1" opacity="0.4"/>
+
+  <!-- Eye of awareness -->
+  <g filter="url(#softGlow)">
+    <ellipse cx="60" cy="58" rx="10" ry="8" fill="none" stroke="#00ffff" stroke-width="1.5" opacity="0.9"/>
+    <circle cx="60" cy="58" r="3.5" fill="#7b2fff"/>
+    <circle cx="60" cy="58" r="1.5" fill="#00ffff"/>
+  </g>
+
+  <!-- Left defense rays -->
+  <line x1="50" y1="54" x2="35" y2="46" stroke="#00ffff" stroke-width="1" opacity="0.5"/>
+  <line x1="50" y1="62" x2="35" y2="72" stroke="#00ffff" stroke-width="1" opacity="0.4"/>
+
+  <!-- Right offense tendrils -->
+  <path d="M 70 54 Q 78 48 85 44" fill="none" stroke="#bf5fff" stroke-width="1" opacity="0.5" stroke-dasharray="3,2"/>
+  <path d="M 70 62 Q 78 68 85 74" fill="none" stroke="#ff00ff" stroke-width="1" opacity="0.4" stroke-dasharray="3,2"/>
+
+  <!-- Top vertex accent -->
+  <circle cx="60" cy="12" r="2" fill="#00ffff" opacity="0.8" filter="url(#softGlow)"/>
 </svg>
