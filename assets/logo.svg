@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
   <defs>
     <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#00ffff"/>
@@ -9,7 +9,7 @@
       <stop offset="100%" stop-color="#00ffff" stop-opacity="0.6"/>
     </linearGradient>
     <filter id="glow">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="blur"/>
@@ -25,27 +25,24 @@
     </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="200" height="200" fill="#0d1117" rx="16"/>
-
   <!-- Outer shield -->
   <g filter="url(#glow)">
-    <path d="M 100 25 L 45 48 L 45 95 C 45 130 70 155 100 168 C 130 155 155 130 155 95 L 155 48 Z"
+    <path d="M 60 10 L 20 28 L 20 60 C 20 85 38 102 60 110 C 82 102 100 85 100 60 L 100 28 Z"
           fill="none" stroke="url(#shieldGrad)" stroke-width="2.5"/>
   </g>
 
-  <!-- Inner shadow/crack - representing the "shadow" duality -->
+  <!-- Inner dashed shield - the shadow -->
   <g filter="url(#innerGlow)">
-    <path d="M 100 55 L 68 68 L 68 100 C 68 120 82 133 100 140 C 118 133 132 120 132 100 L 132 68 Z"
-          fill="none" stroke="url(#innerGrad)" stroke-width="1.5" stroke-dasharray="4,6"/>
+    <path d="M 60 28 L 38 38 L 38 60 C 38 76 48 86 60 91 C 72 86 82 76 82 60 L 82 38 Z"
+          fill="none" stroke="url(#innerGrad)" stroke-width="1.5" stroke-dasharray="4,5"/>
   </g>
 
-  <!-- Central eye/node - the observer -->
-  <circle cx="100" cy="98" r="8" fill="none" stroke="#00ffff" stroke-width="1.5" filter="url(#innerGlow)"/>
-  <circle cx="100" cy="98" r="3" fill="#bf5fff" filter="url(#innerGlow)"/>
+  <!-- Central eye -->
+  <circle cx="60" cy="58" r="7" fill="none" stroke="#00ffff" stroke-width="1.5" filter="url(#innerGlow)"/>
+  <circle cx="60" cy="58" r="2.5" fill="#bf5fff" filter="url(#innerGlow)"/>
 
-  <!-- Three radiating lines from center - representing probes -->
-  <line x1="100" y1="88" x2="100" y2="65" stroke="#00ffff" stroke-width="1" opacity="0.5"/>
-  <line x1="108" y1="103" x2="122" y2="118" stroke="#bf5fff" stroke-width="1" opacity="0.5"/>
-  <line x1="92" y1="103" x2="78" y2="118" stroke="#ff00ff" stroke-width="1" opacity="0.4"/>
+  <!-- Radiating probe lines -->
+  <line x1="60" y1="49" x2="60" y2="35" stroke="#00ffff" stroke-width="1" opacity="0.5"/>
+  <line x1="67" y1="63" x2="77" y2="75" stroke="#bf5fff" stroke-width="1" opacity="0.5"/>
+  <line x1="53" y1="63" x2="43" y2="75" stroke="#ff00ff" stroke-width="1" opacity="0.4"/>
 </svg>
