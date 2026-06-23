@@ -6,41 +6,7 @@ Aegis-Shadow is a dual-purpose eBPF-based security research platform implementin
 
 ## System Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     User Space                               │
-├─────────────────────────────────────────────────────────────┤
-│  Offense Loader          │         Defense Engine            │
-│  ┌──────────────┐       │       ┌──────────────────┐       │
-│  │ CLI Interface│       │       │ CLI Interface     │       │
-│  │ Event Monitor│       │       │ DefenseEngine     │       │
-│  │ C2 Handler   │       │       │  - Anomaly Scorer │       │
-│  │ ICMP Exfil   │       │       │  - Chain Detector │       │
-│  │ Cred Relay   │       │       │  - Correlation DAG│       │
-│  │ Kill Switch  │       │       │  - Auto-Detach    │       │
-│  └──────────────┘       │       │  - Auto-Contain   │       │
-│                          │       │  - Honeypot Mgr   │       │
-│                          │       │  - Hot-Reload Cfg │       │
-│                          │       │  - ML Engine      │       │
-│                          │       │ JSON Logger       │       │
-│                          │       └──────────────────┘       │
-├─────────────────────────────────────────────────────────────┤
-│                    eBPF Verifier                             │
-├─────────────────────────────────────────────────────────────┤
-│                     Kernel Space                             │
-├─────────────────────────────────────────────────────────────┤
-│  Offense eBPF Programs   │    Defense eBPF Programs         │
-│  ┌──────────────┐       │       ┌──────────────┐           │
-│  │ Kprobes      │       │       │ Tracepoints  │           │
-│  │ Kretprobes   │       │       │ Kprobes      │           │
-│  │ XDP          │       │       │ Perf Events  │           │
-│  │ TC Classifier│       │       └──────────────┘           │
-│  │ Tracepoints  │       │                                   │
-│  └──────────────┘       │                                   │
-├─────────────────────────────────────────────────────────────┤
-│                    Linux Kernel                              │
-└─────────────────────────────────────────────────────────────┘
-```
+![System Architecture](assets/architecture.svg)
 
 ## Technical Details
 
@@ -65,36 +31,12 @@ Aegis-Shadow is a dual-purpose eBPF-based security research platform implementin
 ## Data Flow
 
 ### Offense Data Flow
-```
-User Command → Offense Loader → eBPF Maps → eBPF Programs → Kernel Hooks
-                     ↑                                            ↓
-                     └────────── PerfEventArray ←────────────────┘
 
-C2 Ingress:  UDP:53 → XDP → MAGIC check → ChaCha20 decrypt → HMAC verify → Command Map
-C2 Dispatch: Command Map → User-space → Execute (hide/unhide/obfuscate/exfil/kill)
-
-ICMP Exfil:  User-space → ICMP_EXFIL_QUEUE map → TC egress → ICMP echo-request w/ payload
-Cred Relay:  TTY kprobe → CRED_EVENTS → User-space → encode → ICMP/DNS exfil
-```
+![Offense Data Flow](assets/offense-flow.svg)
 
 ### Defense Data Flow
-```
-Kernel Activity → eBPF Programs → Detection Logic → DefenseAlert
-                                                          ↓
-                                                   PerfEventArray
-                                                          ↓
-                                                   Defense Engine
-                                                    ├─ Threshold Filter
-                                                    ├─ Per-PID History
-                                                    ├─ Anomaly Scoring (rate vs baseline)
-                                                    ├─ Attack Chain Correlation
-                                                    ├─ Correlation Graph (DAG)
-                                                    ├─ Auto-Detach (malicious prog removal)
-                                                    ├─ Auto-Contain (cgroup isolation)
-                                                    └─ Output
-                                                        ├─ JSON Log
-                                                        └─ Console
-```
+
+![Defense Data Flow](assets/defense-flow.svg)
 
 ## Build System
 

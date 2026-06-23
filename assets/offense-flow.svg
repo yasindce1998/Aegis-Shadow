@@ -1,0 +1,225 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 420">
+  <defs>
+    <linearGradient id="offFlowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="100%" stop-color="#ff0055"/>
+    </linearGradient>
+    <linearGradient id="offArrowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="100%" stop-color="#ff0055"/>
+    </linearGradient>
+    <filter id="offGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="offSoftGlow">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="offArrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#ff6b35"/>
+    </marker>
+    <marker id="offArrowCyan" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#ffaa00"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="420" fill="#0d1117" rx="10"/>
+  <rect width="898" height="418" x="1" y="1" fill="none" stroke="#1c2333" stroke-width="1" rx="10"/>
+
+  <!-- Title -->
+  <text x="450" y="32" font-family="'Courier New', monospace" font-size="15" font-weight="bold"
+        text-anchor="middle" fill="#ff6b35" filter="url(#offSoftGlow)">OFFENSE DATA FLOW</text>
+
+  <!-- ═══ MAIN FLOW (top row) ═══ -->
+
+  <!-- User Command node -->
+  <rect x="30" y="55" width="130" height="40" rx="6" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.5" filter="url(#offSoftGlow)"/>
+  <text x="95" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#ff6b35">User Command</text>
+
+  <!-- Arrow -->
+  <line x1="160" y1="75" x2="195" y2="75" stroke="#ff6b35" stroke-width="1.5" marker-end="url(#offArrow)"/>
+
+  <!-- Offense Loader node -->
+  <rect x="200" y="55" width="140" height="40" rx="6" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.5" filter="url(#offSoftGlow)"/>
+  <text x="270" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#ff0055">Offense Loader</text>
+
+  <!-- Arrow -->
+  <line x1="340" y1="75" x2="375" y2="75" stroke="#ff0055" stroke-width="1.5" marker-end="url(#offArrow)"/>
+
+  <!-- eBPF Maps node -->
+  <rect x="380" y="55" width="130" height="40" rx="6" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.5" filter="url(#offSoftGlow)"/>
+  <text x="445" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#bf5fff">eBPF Maps</text>
+
+  <!-- Arrow -->
+  <line x1="510" y1="75" x2="545" y2="75" stroke="#bf5fff" stroke-width="1.5" marker-end="url(#offArrow)"/>
+
+  <!-- eBPF Programs node -->
+  <rect x="550" y="55" width="150" height="40" rx="6" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.5" filter="url(#offSoftGlow)"/>
+  <text x="625" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#ff6b35">eBPF Programs</text>
+
+  <!-- Arrow -->
+  <line x1="700" y1="75" x2="735" y2="75" stroke="#ff6b35" stroke-width="1.5" marker-end="url(#offArrow)"/>
+
+  <!-- Kernel Hooks node -->
+  <rect x="740" y="55" width="130" height="40" rx="6" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.5" filter="url(#offSoftGlow)"/>
+  <text x="805" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#39ff14">Kernel Hooks</text>
+
+  <!-- Return arrow (PerfEventArray) -->
+  <path d="M 805 95 L 805 110 L 270 110 L 270 95" fill="none"
+        stroke="#ffaa00" stroke-width="1.2" stroke-dasharray="5,3" marker-end="url(#offArrowCyan)"/>
+  <text x="540" y="106" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ffaa00">PerfEventArray</text>
+
+  <!-- ═══ C2 INGRESS FLOW ═══ -->
+  <text x="450" y="150" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#8b949e">C2 INGRESS</text>
+
+  <!-- C2 flow nodes -->
+  <rect x="30" y="165" width="100" height="36" rx="5" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="80" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff6b35">UDP:53</text>
+
+  <line x1="130" y1="183" x2="155" y2="183" stroke="#ff6b35" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="160" y="165" width="90" height="36" rx="5" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="205" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff0055">XDP</text>
+
+  <line x1="250" y1="183" x2="275" y2="183" stroke="#ff0055" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="280" y="165" width="120" height="36" rx="5" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="340" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff6b35">MAGIC Check</text>
+
+  <line x1="400" y1="183" x2="425" y2="183" stroke="#ff6b35" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="430" y="165" width="140" height="36" rx="5" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="500" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#bf5fff">ChaCha20 Decrypt</text>
+
+  <line x1="570" y1="183" x2="595" y2="183" stroke="#bf5fff" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="600" y="165" width="130" height="36" rx="5" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="665" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#bf5fff">HMAC Verify</text>
+
+  <line x1="730" y1="183" x2="755" y2="183" stroke="#bf5fff" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="760" y="165" width="115" height="36" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="817" y="187" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#39ff14">Command Map</text>
+
+  <!-- ═══ C2 DISPATCH FLOW ═══ -->
+  <text x="450" y="230" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#8b949e">C2 DISPATCH</text>
+
+  <rect x="100" y="245" width="130" height="36" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="165" y="267" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#39ff14">Command Map</text>
+
+  <line x1="230" y1="263" x2="275" y2="263" stroke="#39ff14" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="280" y="245" width="130" height="36" rx="5" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="345" y="267" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff6b35">User-space</text>
+
+  <line x1="410" y1="263" x2="455" y2="263" stroke="#ff6b35" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="460" y="245" width="330" height="36" rx="5" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="625" y="267" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff0055">Execute: hide / unhide / obfuscate / exfil / kill</text>
+
+  <!-- ═══ ICMP EXFIL FLOW ═══ -->
+  <text x="450" y="310" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#8b949e">ICMP EXFIL</text>
+
+  <rect x="100" y="325" width="130" height="36" rx="5" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="165" y="347" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff6b35">User-space</text>
+
+  <line x1="230" y1="343" x2="275" y2="343" stroke="#ff6b35" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="280" y="325" width="180" height="36" rx="5" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="370" y="347" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#bf5fff">ICMP_EXFIL_QUEUE</text>
+
+  <line x1="460" y1="343" x2="505" y2="343" stroke="#bf5fff" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="510" y="325" width="120" height="36" rx="5" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="570" y="347" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff0055">TC Egress</text>
+
+  <line x1="630" y1="343" x2="675" y2="343" stroke="#ff0055" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="680" y="325" width="180" height="36" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="770" y="347" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#39ff14">ICMP Echo + Payload</text>
+
+  <!-- ═══ CRED RELAY FLOW ═══ -->
+  <text x="450" y="390" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#8b949e">CREDENTIAL RELAY</text>
+
+  <rect x="50" y="400" width="130" height="36" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="115" y="422" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#39ff14">TTY Kprobe</text>
+
+  <line x1="180" y1="418" x2="215" y2="418" stroke="#39ff14" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="220" y="400" width="140" height="36" rx="5" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="290" y="422" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#bf5fff">CRED_EVENTS</text>
+
+  <line x1="360" y1="418" x2="395" y2="418" stroke="#bf5fff" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="400" y="400" width="130" height="36" rx="5" fill="#1a1015"
+        stroke="#ff6b35" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="465" y="422" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff6b35">User-space</text>
+
+  <line x1="530" y1="418" x2="565" y2="418" stroke="#ff6b35" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="570" y="400" width="110" height="36" rx="5" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="625" y="422" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#ff0055">Encode</text>
+
+  <line x1="680" y1="418" x2="715" y2="418" stroke="#ff0055" stroke-width="1.2" marker-end="url(#offArrow)"/>
+
+  <rect x="720" y="400" width="150" height="36" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#offSoftGlow)"/>
+  <text x="795" y="422" font-family="'Courier New', monospace" font-size="9"
+        text-anchor="middle" fill="#39ff14">ICMP/DNS Exfil</text>
+</svg>

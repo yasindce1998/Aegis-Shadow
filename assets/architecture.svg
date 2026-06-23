@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 520">
+  <defs>
+    <linearGradient id="archOffenseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="100%" stop-color="#ff0055"/>
+    </linearGradient>
+    <linearGradient id="archDefenseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="100%" stop-color="#0077ff"/>
+    </linearGradient>
+    <linearGradient id="archPurpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#bf5fff"/>
+      <stop offset="100%" stop-color="#ff00ff"/>
+    </linearGradient>
+    <linearGradient id="archGreenGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#39ff14"/>
+      <stop offset="100%" stop-color="#00ff88"/>
+    </linearGradient>
+    <filter id="archGlow">
+      <feGaussianBlur stdDeviation="2.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="archSoftGlow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="520" fill="#0d1117" rx="10"/>
+  <rect width="898" height="518" x="1" y="1" fill="none" stroke="#1c2333" stroke-width="1" rx="10"/>
+
+  <!-- Title -->
+  <text x="450" y="35" font-family="'Courier New', monospace" font-size="16" font-weight="bold"
+        text-anchor="middle" fill="#8b949e" letter-spacing="2">SYSTEM ARCHITECTURE</text>
+
+  <!-- ═══ USER SPACE LAYER ═══ -->
+  <rect x="30" y="50" width="840" height="200" rx="8" fill="#161b22"
+        stroke="#30363d" stroke-width="1"/>
+  <text x="450" y="70" font-family="'Courier New', monospace" font-size="12"
+        text-anchor="middle" fill="#58a6ff" letter-spacing="1">USER SPACE</text>
+
+  <!-- Offense Loader Box -->
+  <rect x="55" y="82" width="370" height="155" rx="6" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" stroke-opacity="0.6" filter="url(#archSoftGlow)"/>
+  <text x="240" y="102" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#ff6b35">OFFENSE LOADER</text>
+
+  <!-- Offense items -->
+  <g font-family="'Courier New', monospace" font-size="10" fill="#f0883e">
+    <text x="80" y="125">CLI Interface</text>
+    <text x="80" y="145">Event Monitor</text>
+    <text x="80" y="165">C2 Handler</text>
+    <text x="80" y="185">ICMP Exfil</text>
+    <text x="80" y="205">Cred Relay</text>
+    <text x="80" y="225">Kill Switch</text>
+    <rect x="72" y="115" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="135" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="155" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="175" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="195" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="215" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+  </g>
+
+  <!-- Defense Engine Box -->
+  <rect x="475" y="82" width="380" height="155" rx="6" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1.2" stroke-opacity="0.6" filter="url(#archSoftGlow)"/>
+  <text x="665" y="102" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#00ffff">DEFENSE ENGINE</text>
+
+  <!-- Defense items -->
+  <g font-family="'Courier New', monospace" font-size="10" fill="#7ee8fa">
+    <text x="500" y="122">CLI Interface</text>
+    <text x="500" y="139">DefenseEngine</text>
+    <text x="520" y="156">Anomaly Scorer</text>
+    <text x="520" y="173">Chain Detector</text>
+    <text x="520" y="190">Correlation DAG</text>
+    <text x="520" y="207">Auto-Detach / Contain</text>
+    <text x="520" y="224">Honeypot Manager</text>
+    <text x="700" y="139">Hot-Reload Config</text>
+    <text x="700" y="156">ML Engine</text>
+    <text x="700" y="173">JSON Logger</text>
+    <rect x="492" y="112" width="4" height="4" rx="2" fill="#00ffff" opacity="0.8"/>
+    <rect x="492" y="129" width="4" height="4" rx="2" fill="#00ffff" opacity="0.8"/>
+    <rect x="512" y="146" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="512" y="163" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="512" y="180" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="512" y="197" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="512" y="214" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="692" y="129" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="692" y="146" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+    <rect x="692" y="163" width="4" height="4" rx="2" fill="#0077ff" opacity="0.6"/>
+  </g>
+
+  <!-- Divider line between Offense and Defense -->
+  <line x1="450" y1="82" x2="450" y2="237" stroke="#30363d" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- ═══ eBPF VERIFIER LAYER ═══ -->
+  <rect x="30" y="260" width="840" height="35" rx="6" fill="#1a0d2e"
+        stroke="url(#archPurpleGrad)" stroke-width="1.2" filter="url(#archSoftGlow)"/>
+  <text x="450" y="282" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#bf5fff">eBPF VERIFIER</text>
+
+  <!-- ═══ KERNEL SPACE LAYER ═══ -->
+  <rect x="30" y="305" width="840" height="175" rx="8" fill="#161b22"
+        stroke="#30363d" stroke-width="1"/>
+  <text x="450" y="325" font-family="'Courier New', monospace" font-size="12"
+        text-anchor="middle" fill="#58a6ff" letter-spacing="1">KERNEL SPACE</text>
+
+  <!-- Offense eBPF Programs -->
+  <rect x="55" y="335" width="370" height="130" rx="6" fill="#1a1015"
+        stroke="#ff0055" stroke-width="1.2" stroke-opacity="0.6" filter="url(#archSoftGlow)"/>
+  <text x="240" y="355" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#ff6b35">OFFENSE eBPF PROGRAMS</text>
+
+  <g font-family="'Courier New', monospace" font-size="10" fill="#f0883e">
+    <text x="80" y="378">Kprobes</text>
+    <text x="80" y="398">Kretprobes</text>
+    <text x="80" y="418">XDP</text>
+    <text x="80" y="438">TC Classifier</text>
+    <text x="80" y="458">Tracepoints</text>
+    <rect x="72" y="368" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="388" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="408" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="428" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+    <rect x="72" y="448" width="4" height="4" rx="2" fill="#ff0055" opacity="0.8"/>
+  </g>
+
+  <!-- Defense eBPF Programs -->
+  <rect x="475" y="335" width="380" height="130" rx="6" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1.2" stroke-opacity="0.6" filter="url(#archSoftGlow)"/>
+  <text x="665" y="355" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#00ffff">DEFENSE eBPF PROGRAMS</text>
+
+  <g font-family="'Courier New', monospace" font-size="10" fill="#7ee8fa">
+    <text x="500" y="378">Tracepoints</text>
+    <text x="500" y="398">Kprobes</text>
+    <text x="500" y="418">Perf Events</text>
+    <rect x="492" y="368" width="4" height="4" rx="2" fill="#00ffff" opacity="0.8"/>
+    <rect x="492" y="388" width="4" height="4" rx="2" fill="#00ffff" opacity="0.8"/>
+    <rect x="492" y="408" width="4" height="4" rx="2" fill="#00ffff" opacity="0.8"/>
+  </g>
+
+  <!-- Divider in kernel space -->
+  <line x1="450" y1="335" x2="450" y2="465" stroke="#30363d" stroke-width="1" stroke-dasharray="4,4"/>
+
+  <!-- ═══ LINUX KERNEL LAYER ═══ -->
+  <rect x="30" y="490" width="840" height="25" rx="6" fill="#0d1a0d"
+        stroke="url(#archGreenGrad)" stroke-width="1" filter="url(#archSoftGlow)"/>
+  <text x="450" y="507" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#39ff14">LINUX KERNEL</text>
+</svg>

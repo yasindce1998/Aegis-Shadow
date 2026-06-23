@@ -1,86 +1,118 @@
-<svg width="800" height="200" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220">
   <defs>
-    <linearGradient id="offenseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ff4444;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ff8800;stop-opacity:1" />
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="50%" stop-color="#bf5fff"/>
+      <stop offset="100%" stop-color="#ff00ff"/>
     </linearGradient>
-    <linearGradient id="defenseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#4444ff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#00ddff;stop-opacity:1" />
+    <linearGradient id="offenseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b35"/>
+      <stop offset="100%" stop-color="#ff0055"/>
     </linearGradient>
-    <linearGradient id="titleGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#ff4444;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#8844ff;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#4444ff;stop-opacity:1" />
+    <linearGradient id="defenseGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="100%" stop-color="#0077ff"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+    <filter id="neonGlow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
       <feMerge>
-        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="subtleGlow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
   </defs>
-  
+
   <!-- Background -->
-  <rect width="800" height="200" fill="#0a0a0a" rx="10"/>
-  
+  <rect width="900" height="220" fill="#0d1117" rx="12"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.04">
+    <line x1="0" y1="40" x2="900" y2="40" stroke="#00ffff" stroke-width="0.5"/>
+    <line x1="0" y1="80" x2="900" y2="80" stroke="#00ffff" stroke-width="0.5"/>
+    <line x1="0" y1="120" x2="900" y2="120" stroke="#00ffff" stroke-width="0.5"/>
+    <line x1="0" y1="160" x2="900" y2="160" stroke="#00ffff" stroke-width="0.5"/>
+    <line x1="0" y1="200" x2="900" y2="200" stroke="#00ffff" stroke-width="0.5"/>
+  </g>
+
+  <!-- Border glow -->
+  <rect width="898" height="218" x="1" y="1" fill="none" stroke="url(#titleGrad)" stroke-width="1" rx="12" opacity="0.4"/>
+
   <!-- Shield Icon (Defense) - Left -->
-  <g transform="translate(50, 60)">
-    <path d="M 40 0 L 0 15 L 0 50 C 0 70 20 85 40 90 C 60 85 80 70 80 50 L 80 15 Z" 
-          fill="url(#defenseGradient)" filter="url(#glow)" opacity="0.8"/>
-    <path d="M 40 20 L 25 35 L 32 42 L 40 34 L 55 49 L 62 42 Z" 
-          fill="#ffffff" opacity="0.9"/>
+  <g transform="translate(70, 55)" filter="url(#neonGlow)">
+    <path d="M 40 5 L 5 22 L 5 55 C 5 78 22 92 40 98 C 58 92 75 78 75 55 L 75 22 Z"
+          fill="none" stroke="url(#defenseGrad)" stroke-width="2.5" opacity="0.9"/>
+    <path d="M 40 25 L 28 38 L 34 44 L 40 38 L 52 50 L 58 44 Z"
+          fill="#00ffff" opacity="0.8"/>
+    <circle cx="40" cy="60" r="3" fill="#00ffff" opacity="0.5"/>
+    <circle cx="30" cy="70" r="2" fill="#0077ff" opacity="0.4"/>
+    <circle cx="50" cy="70" r="2" fill="#0077ff" opacity="0.4"/>
   </g>
-  
-  <!-- Fire Icon (Offense) - Right -->
-  <g transform="translate(670, 60)">
-    <path d="M 40 10 C 35 25 30 35 30 50 C 30 65 35 75 40 80 C 45 75 50 65 50 50 C 50 35 45 25 40 10 Z" 
-          fill="url(#offenseGradient)" filter="url(#glow)" opacity="0.8"/>
-    <path d="M 40 30 C 37 38 35 43 35 50 C 35 57 37 62 40 65 C 43 62 45 57 45 50 C 45 43 43 38 40 30 Z" 
-          fill="#ffdd44" opacity="0.9"/>
+
+  <!-- Skull/Fire Icon (Offense) - Right -->
+  <g transform="translate(750, 55)" filter="url(#neonGlow)">
+    <path d="M 40 8 C 30 20 22 35 22 50 C 22 68 30 80 40 88 C 50 80 58 68 58 50 C 58 35 50 20 40 8 Z"
+          fill="none" stroke="url(#offenseGrad)" stroke-width="2.5" opacity="0.9"/>
+    <path d="M 40 28 C 35 36 32 42 32 50 C 32 58 35 64 40 68 C 45 64 48 58 48 50 C 48 42 45 36 40 28 Z"
+          fill="#ff6b35" opacity="0.6"/>
+    <circle cx="40" cy="48" r="4" fill="#ff0055" opacity="0.7"/>
   </g>
-  
+
   <!-- Main Title -->
-  <text x="400" y="80" font-family="'Courier New', monospace" font-size="48" font-weight="bold" 
-        text-anchor="middle" fill="url(#titleGradient)" filter="url(#glow)">
+  <text x="450" y="90" font-family="'Courier New', 'Fira Code', monospace" font-size="52" font-weight="bold"
+        text-anchor="middle" fill="url(#titleGrad)" filter="url(#neonGlow)">
     AEGIS-SHADOW
   </text>
-  
+
   <!-- Subtitle -->
-  <text x="400" y="110" font-family="'Courier New', monospace" font-size="14" 
-        text-anchor="middle" fill="#888888">
-    Dual-Path eBPF Security Research Platform
+  <text x="450" y="120" font-family="'Courier New', monospace" font-size="14"
+        text-anchor="middle" fill="#8b949e" letter-spacing="3">
+    DUAL-PATH eBPF SECURITY RESEARCH PLATFORM
   </text>
-  
-  <!-- Feature Tags -->
-  <g transform="translate(200, 130)">
+
+  <!-- Separator line -->
+  <line x1="250" y1="140" x2="650" y2="140" stroke="url(#titleGrad)" stroke-width="0.5" opacity="0.4"/>
+
+  <!-- Tags -->
+  <g transform="translate(195, 155)">
     <!-- Offense Tag -->
-    <rect x="0" y="0" width="120" height="30" rx="15" fill="#ff4444" opacity="0.2"/>
-    <rect x="0" y="0" width="120" height="30" rx="15" fill="none" stroke="#ff4444" stroke-width="2"/>
-    <text x="60" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
-          text-anchor="middle" fill="#ff6666">🔥 OFFENSE</text>
-    
+    <rect x="0" y="0" width="130" height="32" rx="16" fill="#ff0055" fill-opacity="0.1"
+          stroke="#ff0055" stroke-width="1.5" filter="url(#subtleGlow)"/>
+    <text x="65" y="21" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+          text-anchor="middle" fill="#ff6b35">OFFENSE</text>
+
     <!-- Defense Tag -->
-    <rect x="140" y="0" width="120" height="30" rx="15" fill="#4444ff" opacity="0.2"/>
-    <rect x="140" y="0" width="120" height="30" rx="15" fill="none" stroke="#4444ff" stroke-width="2"/>
-    <text x="200" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
-          text-anchor="middle" fill="#6666ff">🛡️ DEFENSE</text>
-    
+    <rect x="150" y="0" width="130" height="32" rx="16" fill="#00ffff" fill-opacity="0.1"
+          stroke="#00ffff" stroke-width="1.5" filter="url(#subtleGlow)"/>
+    <text x="215" y="21" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+          text-anchor="middle" fill="#00ffff">DEFENSE</text>
+
     <!-- Research Tag -->
-    <rect x="280" y="0" width="120" height="30" rx="15" fill="#8844ff" opacity="0.2"/>
-    <rect x="280" y="0" width="120" height="30" rx="15" fill="none" stroke="#8844ff" stroke-width="2"/>
-    <text x="340" y="20" font-family="Arial, sans-serif" font-size="12" font-weight="bold" 
-          text-anchor="middle" fill="#aa66ff">🔬 RESEARCH</text>
+    <rect x="300" y="0" width="130" height="32" rx="16" fill="#bf5fff" fill-opacity="0.1"
+          stroke="#bf5fff" stroke-width="1.5" filter="url(#subtleGlow)"/>
+    <text x="365" y="21" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+          text-anchor="middle" fill="#bf5fff">RESEARCH</text>
   </g>
-  
-  <!-- eBPF Badge -->
-  <g transform="translate(350, 170)">
-    <rect x="0" y="0" width="100" height="20" rx="10" fill="#00aa00" opacity="0.3"/>
-    <rect x="0" y="0" width="100" height="20" rx="10" fill="none" stroke="#00ff00" stroke-width="1"/>
-    <text x="50" y="14" font-family="Arial, sans-serif" font-size="10" font-weight="bold" 
-          text-anchor="middle" fill="#00ff00">eBPF • CO-RE</text>
+
+  <!-- eBPF Badge bottom center -->
+  <g transform="translate(380, 198)">
+    <rect x="0" y="0" width="140" height="18" rx="9" fill="#39ff14" fill-opacity="0.08"
+          stroke="#39ff14" stroke-width="1" filter="url(#subtleGlow)"/>
+    <text x="70" y="13" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+          text-anchor="middle" fill="#39ff14">eBPF • CO-RE • Rust</text>
   </g>
 </svg>
-
-<!-- Made with Bob -->

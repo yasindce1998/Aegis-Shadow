@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480">
+  <defs>
+    <linearGradient id="defFlowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="100%" stop-color="#0077ff"/>
+    </linearGradient>
+    <linearGradient id="defPurpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#bf5fff"/>
+      <stop offset="100%" stop-color="#ff00ff"/>
+    </linearGradient>
+    <filter id="defGlow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="defSoftGlow">
+      <feGaussianBlur stdDeviation="1.2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <marker id="defArrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0,0 8,3 0,6" fill="#00ffff"/>
+    </marker>
+    <marker id="defArrowDown" markerWidth="6" markerHeight="8" refX="3" refY="8" orient="auto">
+      <polygon points="0,0 3,8 6,0" fill="#00ffff"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="480" fill="#0d1117" rx="10"/>
+  <rect width="898" height="478" x="1" y="1" fill="none" stroke="#1c2333" stroke-width="1" rx="10"/>
+
+  <!-- Title -->
+  <text x="450" y="32" font-family="'Courier New', monospace" font-size="15" font-weight="bold"
+        text-anchor="middle" fill="#00ffff" filter="url(#defSoftGlow)">DEFENSE DATA FLOW</text>
+
+  <!-- ═══ TOP ROW: Source to PerfEventArray ═══ -->
+
+  <!-- Kernel Activity -->
+  <rect x="30" y="55" width="155" height="42" rx="6" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="107" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#39ff14">Kernel Activity</text>
+
+  <line x1="185" y1="76" x2="225" y2="76" stroke="#39ff14" stroke-width="1.5" marker-end="url(#defArrow)"/>
+
+  <!-- eBPF Programs -->
+  <rect x="230" y="55" width="155" height="42" rx="6" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="307" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#00ffff">eBPF Programs</text>
+
+  <line x1="385" y1="76" x2="425" y2="76" stroke="#00ffff" stroke-width="1.5" marker-end="url(#defArrow)"/>
+
+  <!-- Detection Logic -->
+  <rect x="430" y="55" width="155" height="42" rx="6" fill="#0d1a1a"
+        stroke="#0077ff" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="507" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#0077ff">Detection Logic</text>
+
+  <line x1="585" y1="76" x2="625" y2="76" stroke="#0077ff" stroke-width="1.5" marker-end="url(#defArrow)"/>
+
+  <!-- DefenseAlert -->
+  <rect x="630" y="55" width="145" height="42" rx="6" fill="#1a0d2e"
+        stroke="#bf5fff" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="702" y="80" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#bf5fff">DefenseAlert</text>
+
+  <!-- Arrow down from DefenseAlert -->
+  <line x1="702" y1="97" x2="702" y2="125" stroke="#bf5fff" stroke-width="1.5" marker-end="url(#defArrowDown)"/>
+
+  <!-- PerfEventArray -->
+  <rect x="615" y="130" width="175" height="36" rx="6" fill="#1a0d2e"
+        stroke="url(#defPurpleGrad)" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="702" y="153" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#bf5fff">PerfEventArray</text>
+
+  <!-- Arrow down from PerfEventArray -->
+  <line x1="702" y1="166" x2="702" y2="194" stroke="#bf5fff" stroke-width="1.5" marker-end="url(#defArrowDown)"/>
+
+  <!-- ═══ DEFENSE ENGINE BOX ═══ -->
+  <rect x="200" y="200" width="650" height="265" rx="8" fill="#0a1520"
+        stroke="#00ffff" stroke-width="1.5" filter="url(#defSoftGlow)"/>
+  <text x="525" y="222" font-family="'Courier New', monospace" font-size="12" font-weight="bold"
+        text-anchor="middle" fill="#00ffff">DEFENSE ENGINE</text>
+
+  <!-- Engine modules - Left column -->
+  <rect x="225" y="235" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="235" y="255" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Threshold Filter</text>
+
+  <rect x="225" y="275" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="235" y="295" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Per-PID History</text>
+
+  <rect x="225" y="315" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="235" y="335" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Anomaly Scoring (rate vs baseline)</text>
+
+  <rect x="225" y="355" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="235" y="375" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Attack Chain Correlation</text>
+
+  <rect x="225" y="395" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#00ffff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="235" y="415" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Correlation Graph (DAG)</text>
+
+  <!-- Engine modules - Right column -->
+  <rect x="450" y="235" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#0077ff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="460" y="255" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Auto-Detach (malicious removal)</text>
+
+  <rect x="450" y="275" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#0077ff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="460" y="295" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">Auto-Contain (cgroup isolation)</text>
+
+  <rect x="450" y="315" width="200" height="32" rx="5" fill="#0d1a1a"
+        stroke="#0077ff" stroke-width="1" stroke-opacity="0.7"/>
+  <text x="460" y="335" font-family="'Courier New', monospace" font-size="9" fill="#7ee8fa">ML Engine</text>
+
+  <!-- Connector dots -->
+  <circle cx="215" cy="251" r="3" fill="#00ffff" opacity="0.8"/>
+  <circle cx="215" cy="291" r="3" fill="#00ffff" opacity="0.8"/>
+  <circle cx="215" cy="331" r="3" fill="#00ffff" opacity="0.8"/>
+  <circle cx="215" cy="371" r="3" fill="#00ffff" opacity="0.8"/>
+  <circle cx="215" cy="411" r="3" fill="#00ffff" opacity="0.8"/>
+  <circle cx="440" cy="251" r="3" fill="#0077ff" opacity="0.8"/>
+  <circle cx="440" cy="291" r="3" fill="#0077ff" opacity="0.8"/>
+  <circle cx="440" cy="331" r="3" fill="#0077ff" opacity="0.8"/>
+
+  <!-- ═══ OUTPUT SECTION ═══ -->
+  <text x="525" y="370" font-family="'Courier New', monospace" font-size="11" font-weight="bold"
+        text-anchor="middle" fill="#8b949e">OUTPUT</text>
+
+  <!-- Output boxes -->
+  <rect x="450" y="380" width="175" height="32" rx="5" fill="#0d1a0d"
+        stroke="#39ff14" stroke-width="1.2" filter="url(#defSoftGlow)"/>
+  <text x="537" y="400" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#39ff14">JSON Log</text>
+
+  <rect x="450" y="420" width="175" height="32" rx="5" fill="#1a1015"
+        stroke="#ffaa00" stroke-width="1.2" filter="url(#defSoftGlow)"/>
+  <text x="537" y="440" font-family="'Courier New', monospace" font-size="10" font-weight="bold"
+        text-anchor="middle" fill="#ffaa00">Console</text>
+
+  <!-- Output connector arrows -->
+  <circle cx="440" cy="396" r="3" fill="#39ff14" opacity="0.8"/>
+  <circle cx="440" cy="436" r="3" fill="#ffaa00" opacity="0.8"/>
+
+  <!-- Legend -->
+  <g transform="translate(30, 130)">
+    <text x="0" y="0" font-family="'Courier New', monospace" font-size="9" fill="#8b949e">LEGEND</text>
+    <rect x="0" y="8" width="12" height="12" rx="2" fill="none" stroke="#39ff14" stroke-width="1"/>
+    <text x="18" y="18" font-family="'Courier New', monospace" font-size="8" fill="#39ff14">Kernel</text>
+    <rect x="0" y="26" width="12" height="12" rx="2" fill="none" stroke="#00ffff" stroke-width="1"/>
+    <text x="18" y="36" font-family="'Courier New', monospace" font-size="8" fill="#00ffff">Detection</text>
+    <rect x="0" y="44" width="12" height="12" rx="2" fill="none" stroke="#bf5fff" stroke-width="1"/>
+    <text x="18" y="54" font-family="'Courier New', monospace" font-size="8" fill="#bf5fff">Event Bus</text>
+    <rect x="0" y="62" width="12" height="12" rx="2" fill="none" stroke="#0077ff" stroke-width="1"/>
+    <text x="18" y="72" font-family="'Courier New', monospace" font-size="8" fill="#0077ff">Response</text>
+  </g>
+</svg>
