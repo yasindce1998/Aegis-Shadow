@@ -1,9 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 120">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 130">
   <defs>
     <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#00ffff"/>
       <stop offset="50%" stop-color="#bf5fff"/>
       <stop offset="100%" stop-color="#ff00ff"/>
+    </linearGradient>
+    <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00ffff"/>
+      <stop offset="100%" stop-color="#bf5fff"/>
     </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="2" result="blur"/>
@@ -15,13 +19,19 @@
   </defs>
 
   <!-- Background -->
-  <rect width="600" height="120" fill="#0d1117" rx="8"/>
+  <rect width="600" height="130" fill="#0d1117" rx="8"/>
+
+  <!-- Minimal shield icon -->
+  <g transform="translate(185, 25)" filter="url(#glow)">
+    <path d="M 16 2 L 2 9 L 2 22 C 2 32 9 38 16 40 C 23 38 30 32 30 22 L 30 9 Z"
+          fill="none" stroke="url(#shieldGrad)" stroke-width="1.8" opacity="0.9"/>
+  </g>
 
   <!-- Title -->
-  <text x="300" y="62" font-family="'Courier New', monospace" font-size="42" font-weight="bold"
+  <text x="300" y="68" font-family="'Courier New', monospace" font-size="40" font-weight="bold"
         text-anchor="middle" fill="url(#titleGrad)" filter="url(#glow)">AEGIS-SHADOW</text>
 
   <!-- Subtitle -->
-  <text x="300" y="90" font-family="'Courier New', monospace" font-size="11"
+  <text x="300" y="95" font-family="'Courier New', monospace" font-size="11"
         text-anchor="middle" fill="#484f58" letter-spacing="2.5">eBPF SECURITY RESEARCH</text>
 </svg>
