@@ -332,7 +332,6 @@ mod tests {
     use super::*;
     use common::c2_parse::{parse_c2_packet, C2Packet, C2ParseError};
     use common::C2_CHACHA20_KEY;
-    use std::str::FromStr;
 
     const TEST_NONCE: [u8; 12] = [0x42; 12];
 
