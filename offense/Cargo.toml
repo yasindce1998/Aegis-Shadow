@@ -8,7 +8,7 @@ name = "offense"
 path = "src/lib.rs"
 
 [[bin]]
-name = "offense"
+name = "aegis-shadow-offense"
 path = "src/main.rs"
 required-features = ["ebpf-bin"]
 

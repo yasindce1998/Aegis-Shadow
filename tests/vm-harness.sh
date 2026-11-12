@@ -17,8 +17,8 @@ source "$SCRIPT_DIR/lib/harness-utils.sh"
 IFACE="eth0"
 TIMEOUT=30
 OUTPUT=""
-OFFENSE_BIN="$PROJECT_ROOT/target/release/offense"
-DEFENSE_BIN="$PROJECT_ROOT/target/release/defense"
+OFFENSE_BIN="$PROJECT_ROOT/target/release/aegis-shadow-offense"
+DEFENSE_BIN="$PROJECT_ROOT/target/release/aegis-shadow-defense"
 CALIBRATION_PERIOD=5
 EVENT_WAIT=5
 

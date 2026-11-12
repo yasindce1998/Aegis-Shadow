@@ -56,15 +56,15 @@ bash verify-env.sh
 make build
 
 # 3. Start offensive rootkit (loads core features)
-sudo ./target/release/offense --iface eth0 --hide-pid 1234
+sudo ./target/release/aegis-shadow-offense --iface eth0 --hide-pid 1234
 
 # 4. Run defense detection (in another terminal)
-sudo ./target/release/defense --all-modules --verbose
+sudo ./target/release/aegis-shadow-defense --all-modules --verbose
 
 # 5. Stop programs
 # Press Ctrl+C in each terminal, or:
-sudo pkill offense
-sudo pkill defense
+sudo pkill -f aegis-shadow-offense
+sudo pkill -f aegis-shadow-defense
 ```
 
 ## Project Structure
@@ -87,10 +87,10 @@ The offense module loads the core 13 rootkit features automatically on startup. 
 
 ```bash
 # Basic usage - loads core features
-sudo ./target/release/offense --iface eth0
+sudo ./target/release/aegis-shadow-offense --iface eth0
 
 # With extended features enabled
-sudo ./target/release/offense \
+sudo ./target/release/aegis-shadow-offense \
     --iface eth0 \
     --hide-pid 1234 \
     --obfuscate-inode 98765 \
@@ -138,10 +138,10 @@ The defense module enables detection modules via flags and provides intelligent 
 
 ```bash
 # Enable all detection modules
-sudo ./target/release/defense --all-modules
+sudo ./target/release/aegis-shadow-defense --all-modules
 
 # Enable specific modules with hot-reload config
-sudo ./target/release/defense \
+sudo ./target/release/aegis-shadow-defense \
     --ghost-maps \
     --syscall-latency \
     --bytecode-check \
@@ -152,7 +152,7 @@ sudo ./target/release/defense \
     --output /tmp/alerts.json
 
 # With active response enabled
-sudo ./target/release/defense --all-modules \
+sudo ./target/release/aegis-shadow-defense --all-modules \
     --auto-detach \
     --auto-contain \
     --threshold 3

@@ -22,11 +22,11 @@ fi
 # Build the project
 echo -e "${YELLOW}Building defense components...${NC}"
 cargo xtask build-ebpf --release
-cargo build --release --bin defense
+cargo build --release --bin aegis-shadow-defense
 
 # Start defense engine
 echo -e "\n${YELLOW}Starting defense engine...${NC}"
-./target/release/defense --all-modules --verbose --output /tmp/aegis_alerts.json &
+./target/release/aegis-shadow-defense --all-modules --verbose --output /tmp/aegis_alerts.json &
 DEFENSE_PID=$!
 sleep 3
 
