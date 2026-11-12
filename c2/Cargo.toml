@@ -1,0 +1,18 @@
+[package]
+name = "aegis-c2"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "aegis_c2"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aegis-c2"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+common = { path = "../common", features = ["user"] }
+thiserror = { workspace = true }

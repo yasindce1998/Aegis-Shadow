@@ -6,7 +6,7 @@ build-ebpf:
 
 # Build everything
 build: build-ebpf
-	cargo build --release --package offense --package defense
+	cargo build --release --package offense --package defense --package aegis-c2
 
 # Clean all build artifacts
 clean:
