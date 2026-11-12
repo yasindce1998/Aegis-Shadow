@@ -158,8 +158,8 @@ cleanup_ebpf() {
     local iface="${1:-eth0}"
 
     # Kill any lingering offense/defense processes
-    pkill -9 -x offense 2>/dev/null || true
-    pkill -9 -x defense 2>/dev/null || true
+    pkill -9 -f aegis-shadow-offense 2>/dev/null || true
+    pkill -9 -f aegis-shadow-defense 2>/dev/null || true
 
     # Small delay for processes to die
     sleep 1

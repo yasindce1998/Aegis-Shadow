@@ -22,12 +22,12 @@ fi
 # Build the project
 echo -e "${YELLOW}Building offense components...${NC}"
 cargo xtask build-ebpf --release
-cargo build --release --bin offense
+cargo build --release --bin aegis-shadow-offense
 
 # Test 1: Process Hiding
 echo -e "\n${YELLOW}Test 1: Process Hiding${NC}"
 echo "Starting offense loader in background..."
-./target/release/offense --iface eth0 --hide-pid $$ &
+./target/release/aegis-shadow-offense --iface eth0 --hide-pid $$ &
 OFFENSE_PID=$!
 sleep 2
 

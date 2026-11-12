@@ -15,12 +15,12 @@ clean:
 # Load the rootkit (requires root)
 load-offense:
 	@echo "Loading Shadow rootkit..."
-	sudo ./target/release/offense $(ARGS)
+	sudo ./target/release/aegis-shadow-offense $(ARGS)
 
 # Load the defense guardian (requires root)
 load-defense:
 	@echo "Loading Aegis guardian..."
-	sudo ./target/release/defense $(ARGS)
+	sudo ./target/release/aegis-shadow-defense $(ARGS)
 
 # Run the full test sequence
 test:
@@ -28,13 +28,13 @@ test:
 	@echo "Step 1: Creating target process..."
 	sleep 9999 &
 	@echo "Step 2: Loading rootkit..."
-	sudo ./target/release/offense hide-pid --pid $$(pgrep -f "sleep 9999")
+	sudo ./target/release/aegis-shadow-offense hide-pid --pid $$(pgrep -f "sleep 9999")
 	@echo "Step 3: Verifying process is hidden..."
 	ps aux | grep -c "sleep 9999"
 	@echo "Step 4: Running defense audit..."
-	sudo ./target/release/defense audit
+	sudo ./target/release/aegis-shadow-defense audit
 	@echo "Step 5: Cleanup..."
-	sudo ./target/release/offense cleanup
+	sudo ./target/release/aegis-shadow-offense cleanup
 	kill $$(pgrep -f "sleep 9999") 2>/dev/null || true
 	@echo "=== Test complete ==="
 

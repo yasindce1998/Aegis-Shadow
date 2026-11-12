@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	defenseBin := flag.String("defense-bin", "defense", "Path to the defense binary")
+	defenseBin := flag.String("defense-bin", "aegis-shadow-defense", "Path to the defense binary")
 	flag.Parse()
 
 	m := initialModel()
