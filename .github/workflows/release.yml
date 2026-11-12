@@ -86,10 +86,13 @@ jobs:
         run: cargo build --package offense --features ebpf-bin --release --target ${{ matrix.target }}
       - name: Build defense (aegis)
         run: cargo build --package defense --features ebpf-bin --release --target ${{ matrix.target }}
+      - name: Build c2 sender
+        run: cargo build --package aegis-c2 --release --target ${{ matrix.target }}
       - name: Rename binaries
         run: |
           cp target/${{ matrix.target }}/release/aegis-shadow-offense shadow_${{ matrix.arch }}
           cp target/${{ matrix.target }}/release/aegis-shadow-defense aegis_${{ matrix.arch }}
+          cp target/${{ matrix.target }}/release/aegis-c2 c2_${{ matrix.arch }}
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -97,6 +100,7 @@ jobs:
           path: |
             shadow_${{ matrix.arch }}
             aegis_${{ matrix.arch }}
+            c2_${{ matrix.arch }}
           retention-days: 1
 
   publish:
@@ -122,5 +126,7 @@ jobs:
           files: |
             artifacts/shadow_x86_64
             artifacts/aegis_x86_64
+            artifacts/c2_x86_64
             artifacts/shadow_aarch64
             artifacts/aegis_aarch64
+            artifacts/c2_aarch64

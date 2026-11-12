@@ -76,6 +76,7 @@ sudo pkill -f aegis-shadow-defense
 | `offense/` | User-space rootkit loader and CLI |
 | `defense-ebpf/` | Kernel-space defensive eBPF probes (11 detectors) |
 | `defense/` | User-space detection engine and CLI |
+| `c2/` | Standalone C2 command sender (`aegis-c2`) for driving a running rootkit |
 | `xtask/` | Build automation |
 | `integration-tests/` | Adversarial offense-vs-defense test suite |
 
@@ -182,6 +183,21 @@ sudo ./target/release/aegis-shadow-defense --all-modules \
 | `--honeypots` | Enable honeypot BPF maps |
 | `--calibration-period` | Baseline calibration duration in seconds (default: 60) |
 | `--config` | Path to runtime config JSON file (hot-reloaded every 5s) |
+
+### C2 Sender (aegis-c2)
+
+The `aegis-c2` binary sends a single command to a **running** offense rootkit's C2 channel (encrypted UDP port 53, fire-and-forget — the receiver never ACKs):
+
+```bash
+# Hide PID 1234 on the host running the rootkit
+./target/release/aegis-c2 --target 192.168.1.50 --command hide-pid --arg 1234
+
+# Obfuscate a file by inode, then trigger the kill switch
+./target/release/aegis-c2 --target 192.168.1.50 --command obfuscate-file --arg 987654
+./target/release/aegis-c2 --target 192.168.1.50 --command kill-switch
+```
+
+Commands: `hide-pid`, `unhide-pid` (arg = PID), `obfuscate-file` (arg = inode), `exfil`, `kill-switch`. No root privileges are required to send.
 
 For detailed usage examples, see [USAGE.md](USAGE.md)
 

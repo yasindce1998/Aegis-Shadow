@@ -98,10 +98,14 @@ jobs:
         run: cargo build --package offense --features ebpf-bin
       - name: Build defense
         run: cargo build --package defense --features ebpf-bin
+      - name: Build c2 sender
+        run: cargo build --package aegis-c2
       - name: Clippy offense
         run: cargo clippy --package offense --features ebpf-bin -- -D warnings
       - name: Clippy defense
         run: cargo clippy --package defense --features ebpf-bin -- -D warnings
+      - name: Clippy c2 sender
+        run: cargo clippy --package aegis-c2 -- -D warnings
 
   test:
     name: Integration tests
@@ -116,6 +120,8 @@ jobs:
         run: cargo test --package offense --test integration
       - name: Test defense
         run: cargo test --package defense --test integration
+      - name: Test c2 sender
+        run: cargo test --package aegis-c2
       - name: Test adversarial scenarios
         run: cargo test --package integration-tests --test adversarial
 

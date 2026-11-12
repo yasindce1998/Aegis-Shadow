@@ -113,23 +113,27 @@ pub fn parse_c2_packet(data: &[u8]) -> Result<C2Packet, C2ParseError> {
     }
 }
 
-fn compute_hmac(data: &[u8]) -> [u8; 16] {
-    // SipHash-style keyed hash (matches the eBPF compute_c2_hmac)
-    let mut h: u64 = 0x736861646f77_u64;
-    let mut i = 0;
-    while i < data.len() {
-        h = h.wrapping_mul(0x100000001b3);
-        h ^= data[i] as u64;
-        i += 1;
+/// Keyed hash used to authenticate C2 packets.
+///
+/// Mirrors `compute_c2_hmac` in `offense-ebpf/src/c2.rs` (the XDP receiver):
+/// the state is seeded with `C2_HMAC_KEY`, then each input byte (up to 64)
+/// mixes into one of the 16 state slots via XOR, wrapping add, rotate-left-3.
+/// Any change here MUST be mirrored in the eBPF program, and vice versa.
+pub fn compute_hmac(data: &[u8]) -> [u8; 16] {
+    let mut mac = crate::C2_HMAC_KEY;
+    for (i, &byte) in data.iter().take(64).enumerate() {
+        let slot = &mut mac[i % 16];
+        *slot ^= byte;
+        *slot = (*slot).wrapping_add(byte).rotate_left(3);
     }
-    let h2 = h.wrapping_mul(0x517cc1b727220a95);
-    let mut out = [0u8; 16];
-    out[..8].copy_from_slice(&h.to_le_bytes());
-    out[8..].copy_from_slice(&h2.to_le_bytes());
-    out
+    mac
 }
 
-fn chacha8_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
+/// ChaCha8 block function (8 rounds) used as the C2 keystream generator.
+///
+/// Mirrors `chacha8_block` in `offense-ebpf/src/c2.rs`. Any change here MUST
+/// be mirrored in the eBPF program, and vice versa.
+pub fn chacha8_block(key: &[u8; 32], nonce: &[u8; 12], counter: u32) -> [u8; 64] {
     let mut state = [0u32; 16];
     state[0] = 0x61707865;
     state[1] = 0x3320646e;
