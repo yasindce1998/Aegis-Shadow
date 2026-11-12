@@ -32,12 +32,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ebpf
-      - name: Install LLVM toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y llvm llvm-dev
       - name: Install bpf-linker
-        run: cargo install bpf-linker
+        run: |
+          # The prebuilt musl binary bundles LLVM; building bpf-linker from
+          # source requires a system LLVM whose layout recent runner images
+          # no longer match (llvm-sys links against libLLVM in a directory
+          # the image does not provide).
+          curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/v0.13.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst" \
+            | sudo tar --zstd -x -C /usr/local/bin
+          bpf-linker --version
       - name: Build offense-ebpf
         run: |
           cargo +nightly build --package offense-ebpf \
